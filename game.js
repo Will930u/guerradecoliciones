@@ -13,69 +13,29 @@ const WORLD_HEIGHT = 3500;
 
 let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
-// Generador de Patrón de Textura para el Cuerpo (Estilo Video)
-function createBodyTexturePattern(mainColor, textColor, textLabel) {
-    const pCanvas = document.createElement('canvas');
-    pCanvas.width = 60;
-    pCanvas.height = 30;
-    const pCtx = pCanvas.getContext('2d');
-
-    // Fondo del segmento
-    pCtx.fillStyle = mainColor;
-    pCtx.fillRect(0, 0, 60, 30);
-
-    // Líneas de Borde / Escamas Neón
-    pCtx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-    pCtx.lineWidth = 2;
-    pCtx.strokeRect(1, 1, 58, 28);
-
-    // Texto Estilo Marca (Como 'MyStake' en el video)
-    pCtx.fillStyle = textColor;
-    pCtx.font = "bold 11px sans-serif";
-    pCtx.textAlign = "center";
-    pCtx.textBaseline = "middle";
-    pCtx.fillText(textLabel, 30, 15);
-
-    return pCanvas;
-}
-
-// Catálogo de Skins Temáticas con Textura
+// Catálogo de Skins Temáticas con Tonos Neón y Sombras
 const skinCatalog = {
     cyber_dragon: {
         name: "Digital Dragon",
         primaryColor: "#10b981",
-        secondaryColor: "#059669",
-        textureLabel: "VIPER",
-        headDetail: "DRAGON_CYBER"
+        secondaryColor: "#065f46"
     },
     fire_scale: {
         name: "FireScale Killa",
         primaryColor: "#ef4444",
-        secondaryColor: "#991b1b",
-        textureLabel: "FIRE",
-        headDetail: "DRAGON_FIRE"
+        secondaryColor: "#991b1b"
     },
     flag_venezuela: {
         name: "TriColor Runner",
         primaryColor: "#facc15",
-        secondaryColor: "#2563eb",
-        textureLabel: "VENEZUELA",
-        headDetail: "FLAG_TRICOLOR"
+        secondaryColor: "#1e40af"
     },
     clockwork_gator: {
         name: "Clockwork Gator",
         primaryColor: "#d97706",
-        secondaryColor: "#78350f",
-        textureLabel: "GATOR",
-        headDetail: "GATOR"
+        secondaryColor: "#78350f"
     }
 };
-
-// Crear patrones para cada skin
-Object.keys(skinCatalog).forEach(key => {
-    let s = skinCatalog[key];
-    s.patternCanvas = createBodyTexturePattern(s.primaryColor, "#ffffff", s.textureLabel);
-});
 
 const skinKeys = Object.keys(skinCatalog);
 
@@ -108,7 +68,7 @@ window.selectSkin = function(skinKey) {
     }
 };
 
-// Notificaciones Flotantes
+// Notificaciones Flotantes (No bloqueantes)
 function showFloatingMessage(text, color = "#10b981") {
     let notif = document.getElementById('floatingNotification');
     if (!notif) return;
@@ -138,7 +98,7 @@ function spawnPellet() {
     });
 }
 
-// Monedas doradas grandes (Botín de caídos)
+// Monedas doradas grandes (Botín de gusanos caídos)
 let goldCoins = [];
 
 function createGoldCoins(trail) {
@@ -257,33 +217,33 @@ function drawHexMap(ctx) {
     }
 }
 
-// Renderizador de Gusano con Anillos Orgánicos en Relieve (Forma Real de Gusano)
+// Renderizador de Gusano Orgánico con Anillos 3D y Sombra Neón
 function drawOrganicBody(ctx, trail, radius, skin) {
     for (let i = trail.length - 1; i >= 0; i--) {
         let p = trail[i];
-        // El cuerpo se hace más delgado hacia la cola
         let segmentRadius = radius * (0.5 + 0.5 * (i / trail.length));
 
         ctx.save();
         ctx.translate(p.x, p.y);
 
-        // Sombra de neón exterior para dar profundidad
+        // Brillo Neón Exterior
         ctx.shadowColor = skin.primaryColor;
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = 8;
 
-        // Anillo exterior del segmento
+        // Anillo exterior
         ctx.fillStyle = skin.secondaryColor;
         ctx.beginPath();
         ctx.arc(0, 0, segmentRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        // Anillo interior con color principal (Efecto 3D / Relieve)
+        // Anillo interior en relieve
         ctx.fillStyle = skin.primaryColor;
         ctx.beginPath();
         ctx.arc(0, 0, segmentRadius * 0.8, 0, Math.PI * 2);
         ctx.fill();
 
-        // Reflejo de luz superior en el anillo (Da aspecto cilíndrico)
+        // Reflejo cilíndrico de luz
+        ctx.shadowBlur = 0;
         ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
         ctx.beginPath();
         ctx.arc(-segmentRadius * 0.25, -segmentRadius * 0.25, segmentRadius * 0.3, 0, Math.PI * 2);
@@ -293,13 +253,13 @@ function drawOrganicBody(ctx, trail, radius, skin) {
     }
 }
 
-// Renderizador de Cabeza Neón con Etiqueta $ USD
+// Renderizador de Cabeza Neón con Etiqueta de Dinero
 function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
 
-    // Brillo de la Cabeza
+    // Brillo Neón en Cabeza
     ctx.shadowColor = skin.primaryColor;
     ctx.shadowBlur = 12;
 
@@ -308,7 +268,7 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2);
     ctx.fill();
 
-    // Ojos Blancos con Pupila Negra
+    // Ojos Expresivos
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#fff";
     ctx.beginPath();
@@ -324,7 +284,7 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
 
     ctx.restore();
 
-    // Etiqueta de Saldo Flotante Estilo Neón Verde (Identica al Video)
+    // Etiqueta de Saldo Flotante $ USD (Verde Neón)
     ctx.save();
     let labelText = `$${score.toLocaleString()}`;
     ctx.font = "bold 13px sans-serif";
@@ -346,7 +306,7 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.textAlign = "center";
     ctx.fillText(labelText, x, y - radius - 18);
 
-    // Nombre Arriba
+    // Nombre del Gusano
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 11px sans-serif";
     ctx.fillText(name, x, y - radius - 42);
@@ -415,7 +375,7 @@ function gameLoop() {
         }
     }
 
-    // 4. IA de los Bots
+    // 4. IA de los 20 Bots
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -467,7 +427,7 @@ function gameLoop() {
             }
         }
 
-        // Esquiva
+        // Esquiva de seguridad
         let dangerDetected = false;
         if (player.alive) {
             for (let seg of player.trail) {
@@ -523,23 +483,23 @@ function gameLoop() {
             }
         }
 
-        // Dibujar Bot con Textura
+        // Dibujar Bot con Formato Orgánico
         if (bot.alive) {
-            drawTexturedBody(ctx, bot.trail, bot.radius, bot.skin);
+            drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin);
             drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
         }
     }
 
-    // 5. Dibujar Jugador con Textura
+    // 5. Dibujar Jugador con Formato Orgánico
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-        drawTexturedBody(ctx, player.trail, player.radius, player.skin);
+        drawOrganicBody(ctx, player.trail, player.radius, player.skin);
         drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score);
     }
 
     ctx.restore();
 
-    // Barra Cash Out
+    // Actualizar Barra Cash Out
     let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
     let barFill = document.getElementById('cashBarFill');
     if (barFill) barFill.style.width = progress + '%';
