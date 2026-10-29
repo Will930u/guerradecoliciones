@@ -39,12 +39,19 @@ const skinCatalog = {
 
 const skinKeys = Object.keys(skinCatalog);
 
+// Configuración de la Cámara con Zoom Dinámico
 let camera = {
     x: 0,
     y: 0,
-    update(targetX, targetY) {
-        this.x = targetX - canvas.width / 2;
-        this.y = targetY - canvas.height / 2;
+    zoom: 1.0,
+    targetZoom: 1.0,
+    update(targetX, targetY, playerRadius) {
+        // El zoom se aleja suavemente conforme el gusano va creciendo
+        this.targetZoom = Math.max(0.4, 1.0 - (playerRadius - 18) * 0.008);
+        this.zoom += (this.targetZoom - this.zoom) * 0.05;
+
+        this.x = targetX - (canvas.width / 2) / this.zoom;
+        this.y = targetY - (canvas.height / 2) / this.zoom;
     }
 };
 
@@ -182,7 +189,7 @@ function attemptCashOut() {
     }
 }
 
-// Dibujo de Malla Hexagonal Oscura (Estilo Video)
+// Dibujo de Malla Hexagonal Oscura
 function drawHexMap(ctx) {
     const hexRadius = 45;
     const hexWidth = Math.sqrt(3) * hexRadius;
@@ -193,9 +200,9 @@ function drawHexMap(ctx) {
     ctx.fillStyle = "#070c16";
 
     let startX = Math.floor(camera.x / hexWidth) * hexWidth - hexWidth;
-    let endX = startX + canvas.width + hexWidth * 2;
+    let endX = startX + (canvas.width / camera.zoom) + hexWidth * 2;
     let startY = Math.floor(camera.y / (hexHeight * 0.75)) * (hexHeight * 0.75) - hexHeight;
-    let endY = startY + canvas.height + hexHeight * 2;
+    let endY = startY + (canvas.height / camera.zoom) + hexHeight * 2;
 
     for (let y = startY; y < endY; y += hexHeight * 0.75) {
         let isOffset = Math.floor(y / (hexHeight * 0.75)) % 2 !== 0;
@@ -226,23 +233,19 @@ function drawOrganicBody(ctx, trail, radius, skin) {
         ctx.save();
         ctx.translate(p.x, p.y);
 
-        // Brillo Neón Exterior
         ctx.shadowColor = skin.primaryColor;
         ctx.shadowBlur = 8;
 
-        // Anillo exterior
         ctx.fillStyle = skin.secondaryColor;
         ctx.beginPath();
         ctx.arc(0, 0, segmentRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        // Anillo interior en relieve
         ctx.fillStyle = skin.primaryColor;
         ctx.beginPath();
         ctx.arc(0, 0, segmentRadius * 0.8, 0, Math.PI * 2);
         ctx.fill();
 
-        // Reflejo cilíndrico de luz
         ctx.shadowBlur = 0;
         ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
         ctx.beginPath();
@@ -259,7 +262,6 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.translate(x, y);
     ctx.rotate(angle);
 
-    // Brillo Neón en Cabeza
     ctx.shadowColor = skin.primaryColor;
     ctx.shadowBlur = 12;
 
@@ -268,7 +270,6 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2);
     ctx.fill();
 
-    // Ojos Expresivos
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#fff";
     ctx.beginPath();
@@ -284,7 +285,6 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
 
     ctx.restore();
 
-    // Etiqueta de Saldo Flotante $ USD (Verde Neón)
     ctx.save();
     let labelText = `$${score.toLocaleString()}`;
     ctx.font = "bold 13px sans-serif";
@@ -306,7 +306,6 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.textAlign = "center";
     ctx.fillText(labelText, x, y - radius - 18);
 
-    // Nombre del Gusano
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 11px sans-serif";
     ctx.fillText(name, x, y - radius - 42);
@@ -319,8 +318,12 @@ function gameLoop() {
 
     // 1. Movimiento del Jugador
     if (player.alive) {
-        let cx = mouse.x - canvas.width / 2;
-        let cy = mouse.y - canvas.height / 2;
+        // Convertir la posición del mouse considerando el zoom activo
+        let worldMouseX = mouse.x / camera.zoom + camera.x;
+        let worldMouseY = mouse.y / camera.zoom + camera.y;
+
+        let cx = worldMouseX - player.x;
+        let cy = worldMouseY - player.y;
         let angle = Math.atan2(cy, cx);
 
         if (Math.hypot(cx, cy) > 3) {
@@ -334,11 +337,14 @@ function gameLoop() {
         player.trail.push({ x: player.x, y: player.y, angle: angle });
         if (player.trail.length > Math.floor(player.radius * 2.8)) player.trail.shift();
 
-        camera.update(player.x, player.y);
+        // Actualizar cámara con zoom dinámico basado en el radio del jugador
+        camera.update(player.x, player.y, player.radius);
     }
 
     ctx.save();
-    ctx.translate(-camera.x, -camera.y);
+    // Aplicar el desplazamiento de la cámara y el zoom dinámico
+    ctx.translate(-camera.x * camera.zoom, -camera.y * camera.zoom);
+    ctx.scale(camera.zoom, camera.zoom);
 
     drawHexMap(ctx);
 
@@ -427,7 +433,6 @@ function gameLoop() {
             }
         }
 
-        // Esquiva de seguridad
         let dangerDetected = false;
         if (player.alive) {
             for (let seg of player.trail) {
@@ -483,14 +488,13 @@ function gameLoop() {
             }
         }
 
-        // Dibujar Bot con Formato Orgánico
         if (bot.alive) {
             drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin);
             drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
         }
     }
 
-    // 5. Dibujar Jugador con Formato Orgánico
+    // 5. Dibujar Jugador
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
         drawOrganicBody(ctx, player.trail, player.radius, player.skin);
