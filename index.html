@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viper Royale - Prototipo</title>
+    <title>Viper Royale - Arena</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,6 +17,38 @@
         <div class="hud-card">
             <button class="btn-action" onclick="openModal()">💳 Recargar ($2)</button>
             <button class="btn-action btn-gold" onclick="alert('Tienda de Bots')">🤖 Tienda Bot</button>
+        </div>
+    </div>
+
+    <!-- Barra Superior de Cash Out Dinámico -->
+    <div id="cashOutHUD">
+        <span style="font-size: 0.85rem; font-weight: bold; color: #eab308;">Cash Out</span>
+        <div class="cash-bar-container">
+            <div class="cash-bar-fill" id="cashBarFill"></div>
+        </div>
+        <button class="btn-cashout" onclick="attemptCashOut()">Retirar</button>
+    </div>
+
+    <!-- Panel Lateral de Selección de Skins (Galería) -->
+    <div id="skinGallery">
+        <div class="gallery-title">Skins y Estilos</div>
+        <div class="skin-grid">
+            <div class="skin-card" onclick="selectSkin('cyber_dragon')">
+                <div style="font-size: 24px;">🐉</div>
+                <label>Digital Dragon</label>
+            </div>
+            <div class="skin-card" onclick="selectSkin('fire_scale')">
+                <div style="font-size: 24px;">🔥</div>
+                <label>FireScale</label>
+            </div>
+            <div class="skin-card" onclick="selectSkin('flag_venezuela')">
+                <div style="font-size: 24px;">🇻🇪</div>
+                <label>TriColor</label>
+            </div>
+            <div class="skin-card" onclick="selectSkin('clockwork_gator')">
+                <div style="font-size: 24px;">🐊</div>
+                <label>Gator</label>
+            </div>
         </div>
     </div>
 
@@ -46,6 +78,7 @@
         </div>
     </div>
 
+    <!-- Script principal del juego -->
     <script src="game.js"></script>
 </body>
 </html>
