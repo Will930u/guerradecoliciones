@@ -8,168 +8,238 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Posición y estructura del gusano del jugador
 let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+
+// Estructura del Jugador
 let player = {
     x: canvas.width / 2,
     y: canvas.height / 2,
     radius: 12,
     speed: 3.5,
-    trail: []
+    trail: [],
+    alive: true,
+    score: 0
 };
 
-// Array de pepitas (comida pequeña para crecimiento lento)
+// Comida pequeña normal (pepitas de crecimiento lento)
 let foodPellets = [];
-for (let i = 0; i < 150; i++) {
+for (let i = 0; i < 120; i++) {
+    spawnPellet();
+}
+
+function spawnPellet() {
     foodPellets.push({
-        x: Math.random() * canvas.width * 2 - canvas.width,
-        y: Math.random() * canvas.height * 2 - canvas.height,
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
         radius: 3,
-        color: '#10b981'
+        color: '#10b981',
+        value: 0.05
     });
 }
 
-// Array de bots ambulantes autónomos
+// Monedas doradas grandes (dejadas por los muertos -> Crecimiento Rápido)
+let goldCoins = [];
+
+// Bots ambulantes oponentes
 let bots = [];
-for (let i = 0; i < 5; i++) {
+for (let i = 0; i < 6; i++) {
+    spawnBot();
+}
+
+function spawnBot() {
     bots.push({
+        id: Math.random(),
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
         radius: 12,
-        speed: 2,
+        speed: 2.2,
         angle: Math.random() * Math.PI * 2,
         changeTimer: 0,
         trail: [],
-        color: '#ef4444' // Color rojo diferenciador para los bots
+        color: '#ef4444'
     });
 }
 
-// Registrar movimiento del mouse
 window.addEventListener('mousemove', (e) => {
     mouse.x = e.clientX;
     mouse.y = e.clientY;
 });
 
-// Funciones para abrir y cerrar modales
-function openModal() {
-    document.getElementById('depositModal').style.display = 'flex';
-}
-function closeModal() {
-    document.getElementById('depositModal').style.display = 'none';
-}
-function submitPayment() {
-    const ref = document.getElementById('refInput').value;
-    if (!ref) {
-        alert("Por favor ingresa el número de referencia del Pago Móvil.");
-        return;
+// Función para soltar botín de monedas doradas al morir
+function createGoldCoins(trail, radius) {
+    for (let i = 0; i < trail.length; i += 2) {
+        goldCoins.push({
+            x: trail[i].x + (Math.random() - 0.5) * 10,
+            y: trail[i].y + (Math.random() - 0.5) * 10,
+            radius: 6,
+            color: '#eab308', // Dorado
+            value: 0.8 // ¡Crecimiento RÁPIDO!
+        });
     }
-    alert("¡Pago reportado con éxito! Referencia: " + ref);
-    closeModal();
 }
 
-// Bucle principal del juego en Canvas
+// Bucle principal
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Dibujar cuadrícula de fondo
+    // 1. Dibujar Cuadrícula de Fondo
     ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
     ctx.lineWidth = 1;
-    const gridSize = 45;
-    for (let x = 0; x < canvas.width; x += gridSize) {
+    for (let x = 0; x < canvas.width; x += 45) {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
     }
-    for (let y = 0; y < canvas.height; y += gridSize) {
+    for (let y = 0; y < canvas.height; y += 45) {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
     }
 
-    // 1. Dibujar y gestionar las pepitas pequeñas (Crecimiento lento)
-    for (let pellet of foodPellets) {
-        ctx.fillStyle = pellet.color;
+    // 2. Dibujar y Comer Comida Normal (Verde - Crecimiento Lento)
+    for (let i = foodPellets.length - 1; i >= 0; i--) {
+        let p = foodPellets[i];
+        ctx.fillStyle = p.color;
         ctx.beginPath();
-        ctx.arc(pellet.x, pellet.y, pellet.radius, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         ctx.fill();
 
-        // Colisión del jugador con las pepitas (crecimiento muy pequeño: +0.05 por pepita)
-        let dist = Math.hypot(player.x - pellet.x, player.y - pellet.y);
-        if (dist < player.radius + pellet.radius) {
-            player.radius += 0.05; // Crecimiento mínimo y controlado
-            // Reubicar pepita
-            pellet.x = Math.random() * canvas.width;
-            pellet.y = Math.random() * canvas.height;
+        if (player.alive) {
+            let dist = Math.hypot(player.x - p.x, player.y - p.y);
+            if (dist < player.radius + p.radius) {
+                player.radius += p.value;
+                foodPellets.splice(i, 1);
+                spawnPellet();
+            }
         }
     }
 
-    // 2. Mover y actualizar los Bots Ambulantes
-    for (let bot of bots) {
+    // 3. Dibujar y Comer Monedas Doradas (Botín de Muertos - Crecimiento RÁPIDO)
+    for (let i = goldCoins.length - 1; i >= 0; i--) {
+        let coin = goldCoins[i];
+        ctx.fillStyle = coin.color;
+        ctx.shadowColor = '#eab308';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Si el jugador la come
+        if (player.alive) {
+            let dist = Math.hypot(player.x - coin.x, player.y - coin.y);
+            if (dist < player.radius + coin.radius) {
+                player.radius += coin.value; // ¡Crece mucho más rápido!
+                goldCoins.splice(i, 1);
+            }
+        }
+    }
+
+    // 4. Actualizar y Dibujar BOTS
+    for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
+        let bot = bots[bIndex];
+
         bot.changeTimer++;
-        if (bot.changeTimer > 100) {
-            bot.angle += (Math.random() - 0.5) * 2; // Cambiar dirección suavemente
+        if (bot.changeTimer > 80) {
+            bot.angle += (Math.random() - 0.5) * 1.5;
             bot.changeTimer = 0;
         }
 
         bot.x += Math.cos(bot.angle) * bot.speed;
         bot.y += Math.sin(bot.angle) * bot.speed;
 
-        // Rebotar en los bordes de la pantalla
-        if (bot.x < 50 || bot.x > canvas.width - 50) bot.angle = Math.PI - bot.angle;
-        if (bot.y < 50 || bot.y > canvas.height - 50) bot.angle = -bot.angle;
+        // Rebotar en paredes
+        if (bot.x < 30 || bot.x > canvas.width - 30) bot.angle = Math.PI - bot.angle;
+        if (bot.y < 30 || bot.y > canvas.height - 30) bot.angle = -bot.angle;
 
-        // Guardar rastro del bot
+        // Rastro del Bot
         bot.trail.push({ x: bot.x, y: bot.y });
-        if (bot.trail.length > 20) bot.trail.shift();
+        if (bot.trail.length > Math.floor(bot.radius * 2.5)) bot.trail.shift();
 
-        // Dibujar cuerpo del bot
+        // COLISIÓN: Cabeza del Bot choca contra el cuerpo del JUGADOR
+        if (player.alive) {
+            for (let segment of player.trail) {
+                let d = Math.hypot(bot.x - segment.x, bot.y - segment.y);
+                if (d < bot.radius + player.radius * 0.7) {
+                    // ¡EL BOT MUERE!
+                    createGoldCoins(bot.trail, bot.radius);
+                    bots.splice(bIndex, 1);
+                    setTimeout(spawnBot, 3000); // Reaparece un nuevo bot en 3 seg
+                    break;
+                }
+            }
+        }
+
+        // Dibujar cuerpo del Bot
         for (let p of bot.trail) {
             ctx.fillStyle = "#b91c1c";
             ctx.beginPath();
             ctx.arc(p.x, p.y, bot.radius * 0.8, 0, Math.PI * 2);
             ctx.fill();
         }
-
-        // Dibujar cabeza del bot
+        // Cabeza del Bot
         ctx.fillStyle = bot.color;
         ctx.beginPath();
         ctx.arc(bot.x, bot.y, bot.radius, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    // 3. Mover la cabeza del jugador hacia el mouse
-    let dx = mouse.x - player.x;
-    let dy = mouse.y - player.y;
-    let angle = Math.atan2(dy, dx);
-    
-    if (Math.hypot(dx, dy) > 2) {
-        player.x += Math.cos(angle) * player.speed;
-        player.y += Math.sin(angle) * player.speed;
-    }
+    // 5. Actualizar y Dibujar JUGADOR
+    if (player.alive) {
+        let dx = mouse.x - player.x;
+        let dy = mouse.y - player.y;
+        let angle = Math.atan2(dy, dx);
 
-    // Guardar rastro del jugador
-    player.trail.push({ x: player.x, y: player.y });
-    if (player.trail.length > Math.floor(player.radius * 3)) {
-        player.trail.shift();
-    }
+        if (Math.hypot(dx, dy) > 2) {
+            player.x += Math.cos(angle) * player.speed;
+            player.y += Math.sin(angle) * player.speed;
+        }
 
-    // Dibujar el cuerpo del jugador
-    for (let i = 0; i < player.trail.length; i++) {
-        let p = player.trail[i];
-        let size = player.radius * (i / player.trail.length);
-        ctx.fillStyle = "#10b981";
+        player.trail.push({ x: player.x, y: player.y });
+        if (player.trail.length > Math.floor(player.radius * 2.5)) {
+            player.trail.shift();
+        }
+
+        // COLISIÓN: Cabeza del Jugador choca contra el cuerpo de algún BOT
+        for (let bot of bots) {
+            for (let segment of bot.trail) {
+                let d = Math.hypot(player.x - segment.x, player.y - segment.y);
+                if (d < player.radius + bot.radius * 0.7) {
+                    // ¡EL JUGADOR MUERE!
+                    player.alive = false;
+                    createGoldCoins(player.trail, player.radius);
+                    alert("¡Has chocado y moriste! Tus monedas quedaron en el mapa.");
+                    setTimeout(() => {
+                        player.x = canvas.width / 2;
+                        player.y = canvas.height / 2;
+                        player.radius = 12;
+                        player.trail = [];
+                        player.alive = true;
+                    }, 1000);
+                    break;
+                }
+            }
+        }
+
+        // Dibujar cuerpo del Jugador
+        for (let i = 0; i < player.trail.length; i++) {
+            let p = player.trail[i];
+            let size = player.radius * (i / player.trail.length);
+            ctx.fillStyle = "#10b981";
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(size, 4), 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Dibujar cabeza del Jugador
+        ctx.fillStyle = "#34d399";
         ctx.beginPath();
-        ctx.arc(p.x, p.y, Math.max(size, 4), 0, Math.PI * 2);
+        ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ojos
+        ctx.fillStyle = "#000";
+        ctx.beginPath();
+        ctx.arc(player.x + Math.cos(angle - 0.5) * 6, player.y + Math.sin(angle - 0.5) * 6, 2.5, 0, Math.PI * 2);
+        ctx.arc(player.x + Math.cos(angle + 0.5) * 6, player.y + Math.sin(angle + 0.5) * 6, 2.5, 0, Math.PI * 2);
         ctx.fill();
     }
-
-    // Dibujar la cabeza del jugador con ojos
-    ctx.fillStyle = "#34d399";
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#000";
-    ctx.beginPath();
-    ctx.arc(player.x + Math.cos(angle - 0.5) * 6, player.y + Math.sin(angle - 0.5) * 6, 2.5, 0, Math.PI * 2);
-    ctx.arc(player.x + Math.cos(angle + 0.5) * 6, player.y + Math.sin(angle + 0.5) * 6, 2.5, 0, Math.PI * 2);
-    ctx.fill();
 
     requestAnimationFrame(gameLoop);
 }
