@@ -1,0 +1,51 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viper Royale - Prototipo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- HUD Superior / Marcadores -->
+    <div id="hud">
+        <div class="hud-card">
+            <div>Saldo: <span id="userBalance" class="balance-val">$0.00 USD</span></div>
+            <div class="bcv-val">Tasa BCV: <span id="bcvRate">--</span> VES</div>
+        </div>
+        <div class="hud-card">
+            <button class="btn-action" onclick="openModal()">💳 Recargar ($2)</button>
+            <button class="btn-action btn-gold" onclick="alert('Tienda de Bots')">🤖 Tienda Bot</button>
+        </div>
+    </div>
+
+    <!-- Canvas de la Arena de Juego -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Ventana Flotante / Modal de Pago Móvil -->
+    <div class="modal-overlay" id="depositModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span>Recargar Entrada ($2.00)</span>
+                <span class="close-btn" onclick="closeModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Costo de entrada a la partida: <strong>$2.00 USD</strong></p>
+                <div class="payment-info">
+                    • Banco: Banesco (0134)<br>
+                    • Teléfono: 0412-1234567<br>
+                    • C.I.: V-12.345.678
+                </div>
+                <div style="margin-top: 15px;">
+                    <label style="font-size: 0.85rem; color: #94a3b8;">Número de Referencia:</label>
+                    <input type="text" id="refInput" class="form-control" placeholder="Ej: 123456">
+                </div>
+            </div>
+            <button class="btn-action" style="width: 100%; padding: 12px; margin: 0;" onclick="submitPayment()">Enviar Comprobante</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
