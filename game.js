@@ -70,6 +70,20 @@ window.selectSkin = function(skinKey) {
     }
 };
 
+// Sistema de Notificaciones Flotantes (Sin pausar el juego)
+function showFloatingMessage(text, color = "#10b981") {
+    let notif = document.getElementById('floatingNotification');
+    if (!notif) return;
+    notif.innerText = text;
+    notif.style.background = color;
+    notif.style.opacity = '1';
+    
+    clearTimeout(window.notifTimer);
+    window.notifTimer = setTimeout(() => {
+        notif.style.opacity = '0';
+    }, 3000);
+}
+
 // Comida pequeña normal (Pepitas)
 let foodPellets = [];
 for (let i = 0; i < 350; i++) {
@@ -134,16 +148,16 @@ function submitPayment() {
         alert("Por favor ingresa el número de referencia del Pago Móvil.");
         return;
     }
-    alert("¡Pago reportado con éxito! Referencia: " + ref);
+    showFloatingMessage("¡Pago reportado con éxito!", "#10b981");
     closeModal();
 }
 function attemptCashOut() {
     if (player.score >= player.cashOutGoal) {
-        alert(`¡Retirada exitosa! Has cobrado $${(player.score * 0.1).toFixed(2)} USD.`);
+        showFloatingMessage(`¡Retirada exitosa! Cobrado $${(player.score * 0.1).toFixed(2)} USD.`, "#eab308");
         player.score = 0;
         player.radius = 18;
     } else {
-        alert("Aún no has llenado la barra superior para retirarte.");
+        showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
     }
 }
 
@@ -326,7 +340,7 @@ function gameLoop() {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
                     createGoldCoins(player.trail);
-                    alert("¡Chocaste contra el gusano rival y perdiste!");
+                    showFloatingMessage("¡Chocaste contra el gusano rival y perdiste!", "#ef4444");
                     setTimeout(() => {
                         player.x = WORLD_WIDTH / 2;
                         player.y = WORLD_HEIGHT / 2;
@@ -345,7 +359,7 @@ function gameLoop() {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
                     createGoldCoins(bot.trail);
-                    alert(`¡Eliminaste a ${bot.name}! Dejó un botín masivo de monedas.`);
+                    showFloatingMessage(`¡Eliminaste a ${bot.name}! Dejó monedas de oro.`, "#10b981");
                     let botName = bot.name;
                     let botSkin = bot.skin;
                     bots.splice(bIndex, 1);
