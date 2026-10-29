@@ -56,7 +56,7 @@ let player = {
     x: WORLD_WIDTH / 2,
     y: WORLD_HEIGHT / 2,
     radius: 18,
-    speed: 4.0,
+    speed: 4.2,
     trail: [],
     alive: true,
     score: 1500,
@@ -117,7 +117,7 @@ function createGoldCoins(trail) {
     }
 }
 
-// Generación de 20 BOTS con Nombres Únicos
+// Lista de Nombres para los 20 Bots
 const botNamesList = [
     "ViperKilla", "ShadowHunter", "AlphaOmega", "NeonVenom", "ToxicSerpent",
     "ApexPredator", "CyberCobra", "GoldenScale", "DragonsLair", "TitanPython",
@@ -128,18 +128,32 @@ const botNamesList = [
 let bots = [];
 for (let i = 0; i < 20; i++) {
     let randomSkinKey = skinKeys[Math.floor(Math.random() * skinKeys.length)];
-    spawnSingleBot(botNamesList[i] || ("Bot_" + i), skinCatalog[randomSkinKey]);
+    spawnBorderBot(botNamesList[i] || ("Bot_" + i), skinCatalog[randomSkinKey]);
 }
 
-function spawnSingleBot(name, skin) {
+// Función para hacer que los bots nazcan en los bordes y entren al mapa ordenadamente
+function spawnBorderBot(name, skin) {
+    let edge = Math.floor(Math.random() * 4);
+    let sx, sy, sAngle;
+
+    if (edge === 0) { // Izquierda
+        sx = 50; sy = Math.random() * WORLD_HEIGHT; sAngle = 0;
+    } else if (edge === 1) { // Derecha
+        sx = WORLD_WIDTH - 50; sy = Math.random() * WORLD_HEIGHT; sAngle = Math.PI;
+    } else if (edge === 2) { // Arriba
+        sx = Math.random() * WORLD_WIDTH; sy = 50; sAngle = Math.PI / 2;
+    } else { // Abajo
+        sx = Math.random() * WORLD_WIDTH; sy = WORLD_HEIGHT - 50; sAngle = -Math.PI / 2;
+    }
+
     bots.push({
         name: name,
         skin: skin,
-        x: Math.random() * (WORLD_WIDTH - 200) + 100,
-        y: Math.random() * (WORLD_HEIGHT - 200) + 100,
+        x: sx,
+        y: sy,
         radius: 18,
-        speed: 2.3 + Math.random() * 0.5,
-        angle: Math.random() * Math.PI * 2,
+        speed: 2.8 + Math.random() * 0.6, // Más rápidos y amenazantes
+        angle: sAngle,
         changeTimer: 0,
         trail: [],
         score: Math.floor(Math.random() * 2000) + 500,
@@ -325,42 +339,45 @@ function gameLoop() {
         }
     }
 
-    // 4. Lógica e Inteligencia Avanzada para los 20 BOTS
+    // 4. Inteligencia Artificial Agresiva para los 20 BOTS
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
 
-        // IA DE TOMA DE DECISIONES
         let targetAngle = bot.angle;
         let closestDist = 9999;
         let targetX = null;
         let targetY = null;
 
-        // A) Buscar monedas doradas cercanas (Prioridad Máxima de Recompensa)
-        for (let coin of goldCoins) {
-            let d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
-            if (d < 350 && d < closestDist) {
-                closestDist = d;
-                targetX = coin.x;
-                targetY = coin.y;
-            }
-        }
-
-        // B) Si no hay monedas, intentar atacar al Jugador si está cerca
-        if (!targetX && player.alive) {
+        // A) CAZA ACTIVA DEL JUGADOR (Si está a menos de 500 píxeles, van directo a cortarle el paso)
+        if (player.alive) {
             let dPlayer = Math.hypot(bot.x - player.x, bot.y - player.y);
-            if (dPlayer < 250) {
-                targetX = player.x;
-                targetY = player.y;
+            if (dPlayer < 500) {
+                closestDist = dPlayer;
+                // Intentar anticiparse a la posición del jugador (Corte táctico)
+                targetX = player.x + (Math.cos(player.trail.length > 0 ? player.trail[player.trail.length-1].angle : 0) * 80);
+                targetY = player.y + (Math.sin(player.trail.length > 0 ? player.trail[player.trail.length-1].angle : 0) * 80);
             }
         }
 
-        // C) Si no hay nada, buscar a otro bot cercano para atacarlo
+        // B) Si no persiguen al jugador, buscan monedas doradas a gran distancia
+        if (!targetX) {
+            for (let coin of goldCoins) {
+                let d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
+                if (d < 450 && d < closestDist) {
+                    closestDist = d;
+                    targetX = coin.x;
+                    targetY = coin.y;
+                }
+            }
+        }
+
+        // C) Atacar a otros bots cercanos
         if (!targetX) {
             for (let otherBot of bots) {
                 if (otherBot !== bot && otherBot.alive) {
                     let dOther = Math.hypot(bot.x - otherBot.x, bot.y - otherBot.y);
-                    if (dOther < 200 && dOther < closestDist) {
+                    if (dOther < 300 && dOther < closestDist) {
                         closestDist = dOther;
                         targetX = otherBot.x;
                         targetY = otherBot.y;
@@ -369,12 +386,12 @@ function gameLoop() {
             }
         }
 
-        // D) Si no hay objetivos, buscar comida pequeña cercana
+        // D) Si no hay objetivos de combate, buscar comida cercana
         if (!targetX) {
-            for (let i = 0; i < foodPellets.length; i += 10) {
+            for (let i = 0; i < foodPellets.length; i += 8) {
                 let p = foodPellets[i];
                 let dFood = Math.hypot(bot.x - p.x, bot.y - p.y);
-                if (dFood < 180 && dFood < closestDist) {
+                if (dFood < 200 && dFood < closestDist) {
                     closestDist = dFood;
                     targetX = p.x;
                     targetY = p.y;
@@ -386,33 +403,30 @@ function gameLoop() {
             targetAngle = Math.atan2(targetY - bot.y, targetX - bot.x);
         } else {
             bot.changeTimer++;
-            if (bot.changeTimer > 60) {
-                targetAngle += (Math.random() - 0.5) * 1.2;
+            if (bot.changeTimer > 50) {
+                targetAngle += (Math.random() - 0.5) * 1.5;
                 bot.changeTimer = 0;
             }
         }
 
-        // ESQUIVA DE SEGURIDAD (Evita suicidarse contra cuerpos)
+        // ESQUIVA DE SEGURIDAD (Para no estamparse contra cuerpos por error)
         let dangerDetected = false;
-        
-        // Evitar cuerpo del jugador
         if (player.alive) {
             for (let seg of player.trail) {
-                if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + 25) {
-                    targetAngle += Math.PI * 0.5; // Girar para evitar colisión
+                if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + 30) {
+                    targetAngle += Math.PI * 0.6;
                     dangerDetected = true;
                     break;
                 }
             }
         }
 
-        // Evitar cuerpo de otros bots
         if (!dangerDetected) {
             for (let otherBot of bots) {
                 if (otherBot !== bot && otherBot.alive) {
                     for (let seg of otherBot.trail) {
-                        if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + 25) {
-                            targetAngle += Math.PI * 0.5;
+                        if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + 30) {
+                            targetAngle += Math.PI * 0.6;
                             dangerDetected = true;
                             break;
                         }
@@ -422,19 +436,19 @@ function gameLoop() {
             }
         }
 
-        // Aplicar giro suave
+        // Movimiento fluido del Bot
         bot.angle = targetAngle;
         bot.x += Math.cos(bot.angle) * bot.speed;
         bot.y += Math.sin(bot.angle) * bot.speed;
 
-        // Mantener dentro del mapa
+        // Rebote en bordes del mundo
         if (bot.x < 50 || bot.x > WORLD_WIDTH - 50) bot.angle = Math.PI - bot.angle;
         if (bot.y < 50 || bot.y > WORLD_HEIGHT - 50) bot.angle = -bot.angle;
 
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > Math.floor(bot.radius * 2.8)) bot.trail.shift();
 
-        // Recoger comida por parte de los Bots
+        // Comer comida
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             let p = foodPellets[i];
             if (Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
@@ -445,7 +459,7 @@ function gameLoop() {
             }
         }
 
-        // Recoger monedas por parte de los Bots
+        // Recoger monedas doradas
         for (let i = goldCoins.length - 1; i >= 0; i--) {
             let coin = goldCoins[i];
             if (Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
@@ -456,28 +470,28 @@ function gameLoop() {
         }
 
         // SISTEMA DE COLISIONES
-        // A) Bot choca contra el Jugador
+        // A) Bot choca contra el cuerpo del Jugador -> Muere el Bot
         if (player.alive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
                     createGoldCoins(bot.trail);
-                    showFloatingMessage(`¡Eliminaste a ${bot.name}!`, "#10b981");
+                    showFloatingMessage(`¡Eliminaste a ${bot.name}! Dejó oro.`, "#10b981");
                     let deadName = bot.name;
                     let deadSkin = bot.skin;
                     bots.splice(bIndex, 1);
-                    setTimeout(() => spawnSingleBot(deadName, deadSkin), 3000);
+                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000); // 4 segundos de espera para reaparecer ordenadamente
                     break;
                 }
             }
         }
 
-        // B) Jugador choca contra este Bot
+        // B) Jugador choca contra el cuerpo del Bot -> Muere el Jugador
         if (player.alive && bot.alive) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
                     createGoldCoins(player.trail);
-                    showFloatingMessage("¡Chocaste contra un gusano rival y perdiste!", "#ef4444");
+                    showFloatingMessage("¡Chocaste contra un rival y perdiste!", "#ef4444");
                     setTimeout(() => {
                         player.x = WORLD_WIDTH / 2;
                         player.y = WORLD_HEIGHT / 2;
@@ -491,7 +505,7 @@ function gameLoop() {
             }
         }
 
-        // C) Bot choca contra OTRO Bot (Combate entre la IA)
+        // C) Bot choca contra OTRO Bot
         if (bot.alive) {
             for (let oIndex = bots.length - 1; oIndex >= 0; oIndex--) {
                 let otherBot = bots[oIndex];
@@ -503,7 +517,7 @@ function gameLoop() {
                             let deadName = bot.name;
                             let deadSkin = bot.skin;
                             bots.splice(bIndex, 1);
-                            setTimeout(() => spawnSingleBot(deadName, deadSkin), 3000);
+                            setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
                             break;
                         }
                     }
