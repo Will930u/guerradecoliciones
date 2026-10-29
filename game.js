@@ -257,20 +257,38 @@ function drawHexMap(ctx) {
     }
 }
 
-// Renderizado de Cuerpo Texturizado (Como en el Video)
-function drawTexturedBody(ctx, trail, radius, skin) {
-    for (let i = 0; i < trail.length; i++) {
+// Renderizador de Gusano con Anillos Orgánicos en Relieve (Forma Real de Gusano)
+function drawOrganicBody(ctx, trail, radius, skin) {
+    for (let i = trail.length - 1; i >= 0; i--) {
         let p = trail[i];
+        // El cuerpo se hace más delgado hacia la cola
+        let segmentRadius = radius * (0.5 + 0.5 * (i / trail.length));
+
         ctx.save();
         ctx.translate(p.x, p.y);
-        ctx.rotate(p.angle);
 
-        // Brillo Neón exterior
+        // Sombra de neón exterior para dar profundidad
         ctx.shadowColor = skin.primaryColor;
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = 6;
 
-        // Dibujar cápsula con textura
-        ctx.drawImage(skin.patternCanvas, -radius, -radius * 0.8, radius * 2, radius * 1.6);
+        // Anillo exterior del segmento
+        ctx.fillStyle = skin.secondaryColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, segmentRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Anillo interior con color principal (Efecto 3D / Relieve)
+        ctx.fillStyle = skin.primaryColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, segmentRadius * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Reflejo de luz superior en el anillo (Da aspecto cilíndrico)
+        ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+        ctx.beginPath();
+        ctx.arc(-segmentRadius * 0.25, -segmentRadius * 0.25, segmentRadius * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+
         ctx.restore();
     }
 }
