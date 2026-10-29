@@ -57,7 +57,7 @@ let player = {
     speed: 4.0,
     trail: [],
     alive: true,
-    score: 85420,
+    score: 1500,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
     cashOutGoal: 100000
@@ -70,6 +70,7 @@ window.selectSkin = function(skinKey) {
     }
 };
 
+// Comida pequeña normal (Pepitas)
 let foodPellets = [];
 for (let i = 0; i < 350; i++) {
     spawnPellet();
@@ -80,13 +81,29 @@ function spawnPellet() {
         x: Math.random() * WORLD_WIDTH,
         y: Math.random() * WORLD_HEIGHT,
         radius: 4,
-        color: Math.random() > 0.5 ? '#ef4444' : '#38bdf8'
+        color: Math.random() > 0.5 ? '#ef4444' : '#38bdf8',
+        value: 50
     });
 }
 
+// Monedas doradas grandes (Botín de gusanos eliminados)
+let goldCoins = [];
+
+function createGoldCoins(trail) {
+    for (let i = 0; i < trail.length; i += 2) {
+        goldCoins.push({
+            x: trail[i].x + (Math.random() - 0.5) * 20,
+            y: trail[i].y + (Math.random() - 0.5) * 20,
+            radius: 7,
+            color: '#eab308',
+            value: 300
+        });
+    }
+}
+
 let bots = [
-    { name: "FireScale_Killa", skin: skinCatalog.fire_scale, x: WORLD_WIDTH / 2 - 200, y: WORLD_HEIGHT / 2 - 150, score: 140 },
-    { name: "TriColor_Runner", skin: skinCatalog.flag_venezuela, x: WORLD_WIDTH / 2 + 250, y: WORLD_HEIGHT / 2 - 100, score: 1250 },
+    { name: "FireScale_Killa", skin: skinCatalog.fire_scale, x: WORLD_WIDTH / 2 - 200, y: WORLD_HEIGHT / 2 - 150, score: 1400 },
+    { name: "TriColor_Runner", skin: skinCatalog.flag_venezuela, x: WORLD_WIDTH / 2 + 250, y: WORLD_HEIGHT / 2 - 100, score: 2250 },
     { name: "Clockwork_Gator", skin: skinCatalog.clockwork_gator, x: WORLD_WIDTH / 2 + 300, y: WORLD_HEIGHT / 2 + 100, score: 3400 }
 ];
 
@@ -96,6 +113,7 @@ bots.forEach(bot => {
     bot.angle = Math.random() * Math.PI * 2;
     bot.changeTimer = 0;
     bot.trail = [];
+    bot.alive = true;
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -219,6 +237,7 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // 1. Movimiento del Jugador
     if (player.alive) {
         let cx = mouse.x - canvas.width / 2;
         let cy = mouse.y - canvas.height / 2;
@@ -241,19 +260,51 @@ function gameLoop() {
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
 
+    // 2. Fondo de Panal
     drawHexMap(ctx);
 
-    // Comida
-    for (let p of foodPellets) {
+    // 3. Gestión y Colisión con Comida Normal (Pepitas)
+    for (let i = foodPellets.length - 1; i >= 0; i--) {
+        let p = foodPellets[i];
         ctx.fillStyle = p.color;
         ctx.shadowColor = p.color;
         ctx.shadowBlur = 6;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
         ctx.shadowBlur = 0;
+
+        if (player.alive) {
+            if (Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
+                player.score += p.value;
+                player.radius += 0.05;
+                foodPellets.splice(i, 1);
+                spawnPellet();
+            }
+        }
     }
 
-    // Bots
-    bots.forEach(bot => {
+    // 4. Gestión y Colisión con Monedas Doradas (Botín)
+    for (let i = goldCoins.length - 1; i >= 0; i--) {
+        let coin = goldCoins[i];
+        ctx.fillStyle = coin.color;
+        ctx.shadowColor = '#eab308';
+        ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        if (player.alive) {
+            if (Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
+                player.score += coin.value;
+                player.radius += 0.2;
+                goldCoins.splice(i, 1);
+            }
+        }
+    }
+
+    // 5. Actualización, Movimiento y Colisiones de los BOTS
+    for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
+        let bot = bots[bIndex];
+        if (!bot.alive) continue;
+
         bot.changeTimer++;
         if (bot.changeTimer > 80) {
             bot.angle += (Math.random() - 0.5) * 1.5;
@@ -262,9 +313,65 @@ function gameLoop() {
         bot.x += Math.cos(bot.angle) * bot.speed;
         bot.y += Math.sin(bot.angle) * bot.speed;
 
+        // Rebote en bordes del mapa
+        if (bot.x < 50 || bot.x > WORLD_WIDTH - 50) bot.angle = Math.PI - bot.angle;
+        if (bot.y < 50 || bot.y > WORLD_HEIGHT - 50) bot.angle = -bot.angle;
+
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > Math.floor(bot.radius * 2.8)) bot.trail.shift();
 
+        // COLISIÓN A: La cabeza del Jugador choca contra el cuerpo de este Bot -> Muere el Jugador
+        if (player.alive) {
+            for (let segment of bot.trail) {
+                if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
+                    player.alive = false;
+                    createGoldCoins(player.trail);
+                    alert("¡Chocaste contra el gusano rival y perdiste!");
+                    setTimeout(() => {
+                        player.x = WORLD_WIDTH / 2;
+                        player.y = WORLD_HEIGHT / 2;
+                        player.radius = 18;
+                        player.score = 500;
+                        player.trail = [];
+                        player.alive = true;
+                    }, 1000);
+                    break;
+                }
+            }
+        }
+
+        // COLISIÓN B: La cabeza de este Bot choca contra el cuerpo del Jugador -> Muere el Bot
+        if (player.alive) {
+            for (let segment of player.trail) {
+                if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
+                    createGoldCoins(bot.trail);
+                    alert(`¡Eliminaste a ${bot.name}! Dejó un botín masivo de monedas.`);
+                    let botName = bot.name;
+                    let botSkin = bot.skin;
+                    bots.splice(bIndex, 1);
+
+                    // Reaparecer el bot tras 3 segundos
+                    setTimeout(() => {
+                        bots.push({
+                            name: botName,
+                            skin: botSkin,
+                            x: Math.random() * WORLD_WIDTH,
+                            y: Math.random() * WORLD_HEIGHT,
+                            radius: 18,
+                            speed: 2.4,
+                            angle: Math.random() * Math.PI * 2,
+                            changeTimer: 0,
+                            trail: [],
+                            score: 1000,
+                            alive: true
+                        });
+                    }, 3000);
+                    break;
+                }
+            }
+        }
+
+        // Dibujar cuerpo del Bot
         for (let i = 0; i < bot.trail.length; i++) {
             let p = bot.trail[i];
             ctx.fillStyle = (i % 2 === 0) ? bot.skin.primaryColor : bot.skin.secondaryColor;
@@ -272,9 +379,9 @@ function gameLoop() {
         }
 
         drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
-    });
+    }
 
-    // Jugador
+    // 6. Dibujar Jugador
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
 
