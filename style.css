@@ -1,4 +1,4 @@
-﻿* {
+* {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
@@ -56,6 +56,7 @@ body {
     cursor: pointer;
     transition: 0.2s;
     margin-left: 8px;
+    pointer-events: auto;
 }
 
 .btn-action:hover {
@@ -75,6 +76,53 @@ body {
 #gameCanvas {
     display: block;
     background: #050811;
+}
+
+/* Barra superior de Cash Out (Estilo dinámico) */
+#cashOutHUD {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.9);
+    border: 2px solid #eab308;
+    padding: 8px 20px;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    z-index: 10;
+    box-shadow: 0 0 15px rgba(234, 179, 8, 0.4);
+}
+
+.cash-bar-container {
+    width: 150px;
+    height: 10px;
+    background: #334155;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.cash-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: #eab308;
+    transition: width 0.3s ease;
+}
+
+.btn-cashout {
+    background: #eab308;
+    border: none;
+    padding: 6px 14px;
+    font-weight: bold;
+    border-radius: 15px;
+    cursor: pointer;
+    color: #000;
+}
+
+.btn-cashout:hover {
+    background: #ca8a04;
+    color: #fff;
 }
 
 /* Ventanas Flotantes / Modales */
