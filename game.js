@@ -8,41 +8,47 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Coordenadas del mundo del juego (Mapa gigante)
-const WORLD_WIDTH = 3000;
-const WORLD_HEIGHT = 3000;
+const WORLD_WIDTH = 3500;
+const WORLD_HEIGHT = 3500;
 
 let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
-// Catálogo de Skins y Dibujos Personalizados
-const skinStyles = {
-    dragon: {
-        name: "Dragón de Fuego",
-        headColor: "#dc2626",
-        bodyColor: "#991b1b",
+// Registro de Skins Temáticas
+const skinCatalog = {
+    cyber_dragon: {
+        name: "Digital Dragon",
+        type: "dragon",
+        primaryColor: "#06b6d4",
+        secondaryColor: "#3b82f6",
+        headDetail: "DRAGON_CYBER",
         badge: "🐉"
     },
-    flag: {
-        name: "Bandera Nacional",
-        headColor: "#facc15",
-        bodyColor: "#2563eb",
+    fire_scale: {
+        name: "FireScale Killa",
+        type: "dragon",
+        primaryColor: "#ef4444",
+        secondaryColor: "#991b1b",
+        headDetail: "DRAGON_FIRE",
+        badge: "🔥"
+    },
+    flag_venezuela: {
+        name: "TriColor Runner",
+        type: "flag",
+        primaryColor: "#facc15",
+        secondaryColor: "#2563eb",
+        headDetail: "FLAG_TRICOLOR",
         badge: "🇻🇪"
     },
-    claws: {
-        name: "Garras Letales",
-        headColor: "#0284c7",
-        bodyColor: "#0f172a",
-        badge: "🐾"
-    },
-    sticker: {
-        name: "Sticker Retro",
-        headColor: "#ec4899",
-        bodyColor: "#be185d",
-        badge: "⭐"
+    clockwork_gator: {
+        name: "Clockwork Gator",
+        type: "gator",
+        primaryColor: "#d97706",
+        secondaryColor: "#78350f",
+        headDetail: "GATOR",
+        badge: "🐊"
     }
 };
 
-// Cámara que sigue al jugador
 let camera = {
     x: 0,
     y: 0,
@@ -52,30 +58,27 @@ let camera = {
     }
 };
 
-// Estructura del Jugador
 let player = {
     x: WORLD_WIDTH / 2,
     y: WORLD_HEIGHT / 2,
-    radius: 14,
-    speed: 3.8,
+    radius: 18,
+    speed: 4.0,
     trail: [],
     alive: true,
-    score: 0,
+    score: 85420,
     name: "Tú (Jugador)",
-    skin: skinStyles.dragon, // Skin inicial de Dragón
-    cashOutGoal: 40
+    skin: skinCatalog.cyber_dragon,
+    cashOutGoal: 100000
 };
 
-// Función global para cambiar skin desde la interfaz
-window.changeSkin = function(skinKey) {
-    if (skinStyles[skinKey]) {
-        player.skin = skinStyles[skinKey];
+window.selectSkin = function(skinKey) {
+    if (skinCatalog[skinKey]) {
+        player.skin = skinCatalog[skinKey];
     }
 };
 
-// Comida pequeña normal (Pepitas verdes)
 let foodPellets = [];
-for (let i = 0; i < 300; i++) {
+for (let i = 0; i < 350; i++) {
     spawnPellet();
 }
 
@@ -83,77 +86,151 @@ function spawnPellet() {
     foodPellets.push({
         x: Math.random() * WORLD_WIDTH,
         y: Math.random() * WORLD_HEIGHT,
-        radius: 3,
-        color: '#10b981',
-        value: 1
+        radius: 4,
+        color: Math.random() > 0.5 ? '#ef4444' : '#38bdf8'
     });
 }
 
-// Monedas doradas grandes (Botín de muertos)
 let goldCoins = [];
 
-// Bots ambulantes con nombres y skins asignadas
-let bots = [];
-const botConfig = [
-    { name: "CrimsonNinja42", skin: skinStyles.claws },
-    { name: "ShadowSnakeXX", skin: skinStyles.sticker },
-    { name: "NovaHunter916", skin: skinStyles.flag },
-    { name: "ToxicLegendX9", skin: skinStyles.dragon },
-    { name: "MegaDrifter328", skin: skinStyles.claws }
+let bots = [
+    { name: "FireScale_Killa", skin: skinCatalog.fire_scale, x: WORLD_WIDTH / 2 - 200, y: WORLD_HEIGHT / 2 - 150, score: 140 },
+    { name: "TriColor_Runner", skin: skinCatalog.flag_venezuela, x: WORLD_WIDTH / 2 + 250, y: WORLD_HEIGHT / 2 - 100, score: 1250 },
+    { name: "Clockwork_Gator", skin: skinCatalog.clockwork_gator, x: WORLD_WIDTH / 2 + 300, y: WORLD_HEIGHT / 2 + 100, score: 3400 }
 ];
 
-for (let i = 0; i < botConfig.length; i++) {
-    spawnBot(botConfig[i].name, botConfig[i].skin);
-}
-
-function spawnBot(name, skin) {
-    bots.push({
-        x: Math.random() * WORLD_WIDTH,
-        y: Math.random() * WORLD_HEIGHT,
-        radius: 14,
-        speed: 2.3,
-        angle: Math.random() * Math.PI * 2,
-        changeTimer: 0,
-        trail: [],
-        skin: skin || skinStyles.claws,
-        name: name
-    });
-}
+bots.forEach(bot => {
+    bot.radius = 18;
+    bot.speed = 2.4;
+    bot.angle = Math.random() * Math.PI * 2;
+    bot.changeTimer = 0;
+    bot.trail = [];
+});
 
 window.addEventListener('mousemove', (e) => {
     mouse.x = e.clientX;
     mouse.y = e.clientY;
 });
 
-// Soltar monedas doradas al morir
-function createGoldCoins(trail) {
-    for (let i = 0; i < trail.length; i += 2) {
-        goldCoins.push({
-            x: trail[i].x + (Math.random() - 0.5) * 15,
-            y: trail[i].y + (Math.random() - 0.5) * 15,
-            radius: 7,
-            color: '#eab308',
-            value: 5
-        });
+// Dibujo de Malla de Panal Hexagonal
+function drawHexMap(ctx) {
+    const hexRadius = 40;
+    const hexWidth = Math.sqrt(3) * hexRadius;
+    const hexHeight = 2 * hexRadius;
+
+    ctx.strokeStyle = "rgba(30, 41, 59, 0.6)";
+    ctx.lineWidth = 2;
+    ctx.fillStyle = "#0a0f1d";
+
+    let startX = Math.floor(camera.x / hexWidth) * hexWidth - hexWidth;
+    let endX = startX + canvas.width + hexWidth * 2;
+    let startY = Math.floor(camera.y / (hexHeight * 0.75)) * (hexHeight * 0.75) - hexHeight;
+    let endY = startY + canvas.height + hexHeight * 2;
+
+    for (let y = startY; y < endY; y += hexHeight * 0.75) {
+        let isOffset = Math.floor(y / (hexHeight * 0.75)) % 2 !== 0;
+        let xOffset = isOffset ? hexWidth / 2 : 0;
+
+        for (let x = startX + xOffset; x < endX; x += hexWidth) {
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                let angle = (Math.PI / 3) * i;
+                let hx = x + hexRadius * Math.cos(angle);
+                let hy = y + hexRadius * Math.sin(angle);
+                if (i === 0) ctx.moveTo(hx, hy);
+                else ctx.lineTo(hx, hy);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
     }
 }
 
-function attemptCashOut() {
-    if (player.score >= player.cashOutGoal) {
-        alert(`¡Retirada exitosa! Has cobrado $${(player.score * 0.1).toFixed(2)} USD.`);
-        player.score = 0;
-        player.radius = 14;
+// Renderizador Avanzado de Cabeza de Gusano
+function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    // Renderizar Forma según el Tipo de Skin
+    if (skin.headDetail === "DRAGON_CYBER" || skin.headDetail === "DRAGON_FIRE") {
+        // Hocico / Cabeza de Dragón
+        ctx.fillStyle = skin.primaryColor;
+        ctx.beginPath();
+        ctx.moveTo(radius * 1.4, 0);
+        ctx.lineTo(-radius * 0.8, -radius * 0.9);
+        ctx.lineTo(-radius * 0.5, 0);
+        ctx.lineTo(-radius * 0.8, radius * 0.9);
+        ctx.closePath();
+        ctx.fill();
+
+        // Cuernos
+        ctx.fillStyle = skin.secondaryColor;
+        ctx.beginPath();
+        ctx.moveTo(-radius * 0.5, -radius * 0.6);
+        ctx.lineTo(-radius * 1.5, -radius * 1.1);
+        ctx.lineTo(-radius * 0.8, -radius * 0.3);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(-radius * 0.5, radius * 0.6);
+        ctx.lineTo(-radius * 1.5, radius * 1.1);
+        ctx.lineTo(-radius * 0.8, radius * 0.3);
+        ctx.fill();
     } else {
-        alert("Aún no has llenado la barra superior para retirarte.");
+        // Cabeza Estándar
+        ctx.fillStyle = skin.primaryColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fill();
     }
+
+    // Ojos Grandes
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(radius * 0.3, -radius * 0.4, 5, 0, Math.PI * 2);
+    ctx.arc(radius * 0.3, radius * 0.4, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(radius * 0.4, -radius * 0.4, 2.5, 0, Math.PI * 2);
+    ctx.arc(radius * 0.4, radius * 0.4, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // Etiqueta de Saldo Flotante ($ USD)
+    ctx.save();
+    ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+    ctx.strokeStyle = "#10b981";
+    ctx.lineWidth = 2;
+    let labelText = `$${score.toLocaleString()}`;
+    ctx.font = "bold 12px sans-serif";
+    let textWidth = ctx.measureText(labelText).width;
+
+    ctx.beginPath();
+    ctx.roundRect(x - textWidth / 2 - 10, y - radius - 32, textWidth + 20, 22, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#10b981";
+    ctx.textAlign = "center";
+    ctx.fillText(labelText, x, y - radius - 17);
+
+    // Nombre
+    ctx.fillStyle = "#fff";
+    ctx.font = "11px sans-serif";
+    ctx.fillText(name, x, y - radius - 38);
+    ctx.restore();
 }
 
-// Bucle principal de renderizado
+// Bucle Principal
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (player.alive) {
-        // Mover Jugador hacia el mouse
         let cx = mouse.x - canvas.width / 2;
         let cy = mouse.y - canvas.height / 2;
         let angle = Math.atan2(cy, cx);
@@ -163,167 +240,69 @@ function gameLoop() {
             player.y += Math.sin(angle) * player.speed;
         }
 
-        // Limitar dentro del mapa gigante
         player.x = Math.max(30, Math.min(WORLD_WIDTH - 30, player.x));
         player.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, player.y));
 
-        player.trail.push({ x: player.x, y: player.y });
-        if (player.trail.length > Math.floor(player.radius * 2.5)) player.trail.shift();
+        player.trail.push({ x: player.x, y: player.y, angle: angle });
+        if (player.trail.length > Math.floor(player.radius * 2.8)) player.trail.shift();
 
-        // Actualizar la cámara para que siga al jugador
         camera.update(player.x, player.y);
     }
 
-    // APLICAR TRANSFORMACIÓN DE CÁMARA
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
 
-    // 1. Dibujar Cuadrícula de Fondo
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
-    ctx.lineWidth = 1;
-    const gridSize = 60;
-    for (let x = 0; x <= WORLD_WIDTH; x += gridSize) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_HEIGHT); ctx.stroke();
-    }
-    for (let y = 0; y <= WORLD_HEIGHT; y += gridSize) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD_WIDTH, y); ctx.stroke();
-    }
+    // Dibujar Panal Hexagonal
+    drawHexMap(ctx);
 
-    // 2. Dibujar Comida Normal (Verde)
-    for (let i = foodPellets.length - 1; i >= 0; i--) {
-        let p = foodPellets[i];
+    // Dibujar Comida
+    for (let p of foodPellets) {
         ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 6;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
-
-        if (player.alive) {
-            if (Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
-                player.radius += 0.05;
-                player.score += p.value;
-                foodPellets.splice(i, 1);
-                spawnPellet();
-            }
-        }
-    }
-
-    // 3. Dibujar Monedas Doradas
-    for (let i = goldCoins.length - 1; i >= 0; i--) {
-        let coin = goldCoins[i];
-        ctx.fillStyle = coin.color;
-        ctx.shadowColor = '#eab308';
-        ctx.shadowBlur = 10;
-        ctx.beginPath(); ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2); ctx.fill();
         ctx.shadowBlur = 0;
-
-        if (player.alive) {
-            if (Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
-                player.radius += 0.3;
-                player.score += coin.value;
-                goldCoins.splice(i, 1);
-            }
-        }
     }
 
-    // 4. Actualizar y Dibujar BOTS
-    for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
-        let bot = bots[bIndex];
+    // Dibujar Bots
+    bots.forEach(bot => {
         bot.changeTimer++;
-        if (bot.changeTimer > 90) {
+        if (bot.changeTimer > 80) {
             bot.angle += (Math.random() - 0.5) * 1.5;
             bot.changeTimer = 0;
         }
-
         bot.x += Math.cos(bot.angle) * bot.speed;
         bot.y += Math.sin(bot.angle) * bot.speed;
 
-        if (bot.x < 50 || bot.x > WORLD_WIDTH - 50) bot.angle = Math.PI - bot.angle;
-        if (bot.y < 50 || bot.y > WORLD_HEIGHT - 50) bot.angle = -bot.angle;
+        bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
+        if (bot.trail.length > Math.floor(bot.radius * 2.8)) bot.trail.shift();
 
-        bot.trail.push({ x: bot.x, y: bot.y });
-        if (bot.trail.length > Math.floor(bot.radius * 2.5)) bot.trail.shift();
-
-        // Colisión Bot contra Jugador
-        if (player.alive) {
-            for (let segment of player.trail) {
-                if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.7) {
-                    createGoldCoins(bot.trail);
-                    let name = bot.name;
-                    let skin = bot.skin;
-                    bots.splice(bIndex, 1);
-                    setTimeout(() => spawnBot(name, skin), 3000);
-                    break;
-                }
-            }
-        }
-
-        // Cuerpo del Bot estilizado
+        // Cuerpo
         for (let i = 0; i < bot.trail.length; i++) {
             let p = bot.trail[i];
-            let size = bot.radius * (i / bot.trail.length);
-            ctx.fillStyle = (i % 2 === 0) ? bot.skin.bodyColor : bot.skin.headColor;
-            ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(size, 4), 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = (i % 2 === 0) ? bot.skin.primaryColor : bot.skin.secondaryColor;
+            ctx.beginPath(); ctx.arc(p.x, p.y, bot.radius * 0.8, 0, Math.PI * 2); ctx.fill();
         }
 
-        // Cabeza e Insignia del Bot
-        ctx.fillStyle = bot.skin.headColor;
-        ctx.beginPath(); ctx.arc(bot.x, bot.y, bot.radius, 0, Math.PI * 2); ctx.fill();
+        drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
+    });
 
-        ctx.font = "12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(bot.skin.badge, bot.x, bot.y);
-
-        // Nombre del Bot
-        ctx.fillStyle = "#fff";
-        ctx.font = "11px sans-serif";
-        ctx.fillText(bot.name, bot.x, bot.y - bot.radius - 10);
-    }
-
-    // 5. Dibujar Jugador con Skin Personalizada
+    // Dibujar Jugador
     if (player.alive) {
-        for (let bot of bots) {
-            for (let segment of bot.trail) {
-                if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.7) {
-                    player.alive = false;
-                    createGoldCoins(player.trail);
-                    alert("¡Chocaste contra un rival y perdiste!");
-                    setTimeout(() => {
-                        player.x = WORLD_WIDTH / 2;
-                        player.y = WORLD_HEIGHT / 2;
-                        player.radius = 14;
-                        player.score = 0;
-                        player.trail = [];
-                        player.alive = true;
-                    }, 1000);
-                    break;
-                }
-            }
-        }
+        let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
 
-        // Cuerpo del Jugador con patrón alternado de la Skin
+        // Cuerpo con textura/escamas
         for (let i = 0; i < player.trail.length; i++) {
             let p = player.trail[i];
             let size = player.radius * (i / player.trail.length);
-            ctx.fillStyle = (i % 2 === 0) ? player.skin.bodyColor : player.skin.headColor;
-            ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(size, 4), 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = (i % 2 === 0) ? player.skin.primaryColor : player.skin.secondaryColor;
+            ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(size, 5), 0, Math.PI * 2); ctx.fill();
         }
 
-        // Cabeza del Jugador
-        ctx.fillStyle = player.skin.headColor;
-        ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2); ctx.fill();
-
-        // Insignia/Sticker en la cabeza
-        ctx.font = "12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(player.skin.badge, player.x, player.y);
-
-        // Nombre flotante del usuario
-        ctx.fillStyle = "#38bdf8";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText(player.name, player.x, player.y - player.radius - 10);
+        drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score);
     }
 
-    ctx.restore(); // Restaurar contexto para HUD
+    ctx.restore();
 
     requestAnimationFrame(gameLoop);
 }
