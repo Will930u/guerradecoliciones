@@ -8,18 +8,45 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Coordenadas del mundo del juego (El mapa es mucho más grande que la pantalla)
+// Coordenadas del mundo del juego (Mapa gigante)
 const WORLD_WIDTH = 3000;
 const WORLD_HEIGHT = 3000;
 
 let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+
+// Catálogo de Skins y Dibujos Personalizados
+const skinStyles = {
+    dragon: {
+        name: "Dragón de Fuego",
+        headColor: "#dc2626",
+        bodyColor: "#991b1b",
+        badge: "🐉"
+    },
+    flag: {
+        name: "Bandera Nacional",
+        headColor: "#facc15",
+        bodyColor: "#2563eb",
+        badge: "🇻🇪"
+    },
+    claws: {
+        name: "Garras Letales",
+        headColor: "#0284c7",
+        bodyColor: "#0f172a",
+        badge: "🐾"
+    },
+    sticker: {
+        name: "Sticker Retro",
+        headColor: "#ec4899",
+        bodyColor: "#be185d",
+        badge: "⭐"
+    }
+};
 
 // Cámara que sigue al jugador
 let camera = {
     x: 0,
     y: 0,
     update(targetX, targetY) {
-        // Centrar la cámara suavemente en el jugador
         this.x = targetX - canvas.width / 2;
         this.y = targetY - canvas.height / 2;
     }
@@ -35,7 +62,15 @@ let player = {
     alive: true,
     score: 0,
     name: "Tú (Jugador)",
-    cashOutGoal: 40 // Puntos necesarios para habilitar el cash out
+    skin: skinStyles.dragon, // Skin inicial de Dragón
+    cashOutGoal: 40
+};
+
+// Función global para cambiar skin desde la interfaz
+window.changeSkin = function(skinKey) {
+    if (skinStyles[skinKey]) {
+        player.skin = skinStyles[skinKey];
+    }
 };
 
 // Comida pequeña normal (Pepitas verdes)
@@ -57,14 +92,21 @@ function spawnPellet() {
 // Monedas doradas grandes (Botín de muertos)
 let goldCoins = [];
 
-// Bots ambulantes con nombres flotantes (Estilo del video)
+// Bots ambulantes con nombres y skins asignadas
 let bots = [];
-const botNames = ["CrimsonNinja42", "ShadowSnakeXX", "NovaHunter916", "ToxicLegendX9", "MegaDrifter328"];
-for (let i = 0; i < 6; i++) {
-    spawnBot(botNames[i] || "BotPlayer");
+const botConfig = [
+    { name: "CrimsonNinja42", skin: skinStyles.claws },
+    { name: "ShadowSnakeXX", skin: skinStyles.sticker },
+    { name: "NovaHunter916", skin: skinStyles.flag },
+    { name: "ToxicLegendX9", skin: skinStyles.dragon },
+    { name: "MegaDrifter328", skin: skinStyles.claws }
+];
+
+for (let i = 0; i < botConfig.length; i++) {
+    spawnBot(botConfig[i].name, botConfig[i].skin);
 }
 
-function spawnBot(name) {
+function spawnBot(name, skin) {
     bots.push({
         x: Math.random() * WORLD_WIDTH,
         y: Math.random() * WORLD_HEIGHT,
@@ -73,7 +115,7 @@ function spawnBot(name) {
         angle: Math.random() * Math.PI * 2,
         changeTimer: 0,
         trail: [],
-        color: '#ef4444',
+        skin: skin || skinStyles.claws,
         name: name
     });
 }
@@ -111,7 +153,7 @@ function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (player.alive) {
-        // 1. Mover Jugador hacia el mouse respecto al centro de la pantalla
+        // Mover Jugador hacia el mouse
         let cx = mouse.x - canvas.width / 2;
         let cy = mouse.y - canvas.height / 2;
         let angle = Math.atan2(cy, cx);
@@ -132,11 +174,11 @@ function gameLoop() {
         camera.update(player.x, player.y);
     }
 
-    // APLICAR TRANSFORMACIÓN DE CÁMARA (Todo lo que se dibuje aquí se moverá con el mapa)
+    // APLICAR TRANSFORMACIÓN DE CÁMARA
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
 
-    // 2. Dibujar Cuadrícula / Fondo del Mapa Gigante
+    // 1. Dibujar Cuadrícula de Fondo
     ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
     ctx.lineWidth = 1;
     const gridSize = 60;
@@ -147,7 +189,7 @@ function gameLoop() {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD_WIDTH, y); ctx.stroke();
     }
 
-    // 3. Dibujar Comida Normal (Verde)
+    // 2. Dibujar Comida Normal (Verde)
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -163,7 +205,7 @@ function gameLoop() {
         }
     }
 
-    // 4. Dibujar Monedas Doradas (Botín brillante)
+    // 3. Dibujar Monedas Doradas
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -181,7 +223,7 @@ function gameLoop() {
         }
     }
 
-    // 5. Actualizar y Dibujar BOTS
+    // 4. Actualizar y Dibujar BOTS
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         bot.changeTimer++;
@@ -205,29 +247,38 @@ function gameLoop() {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.7) {
                     createGoldCoins(bot.trail);
                     let name = bot.name;
+                    let skin = bot.skin;
                     bots.splice(bIndex, 1);
-                    setTimeout(() => spawnBot(name), 3000);
+                    setTimeout(() => spawnBot(name, skin), 3000);
                     break;
                 }
             }
         }
 
-        // Cuerpo del Bot
-        for (let p of bot.trail) {
-            ctx.fillStyle = "#991b1b";
-            ctx.beginPath(); ctx.arc(p.x, p.y, bot.radius * 0.75, 0, Math.PI * 2); ctx.fill();
+        // Cuerpo del Bot estilizado
+        for (let i = 0; i < bot.trail.length; i++) {
+            let p = bot.trail[i];
+            let size = bot.radius * (i / bot.trail.length);
+            ctx.fillStyle = (i % 2 === 0) ? bot.skin.bodyColor : bot.skin.headColor;
+            ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(size, 4), 0, Math.PI * 2); ctx.fill();
         }
-        // Cabeza y Nombre del Bot
-        ctx.fillStyle = bot.color;
+
+        // Cabeza e Insignia del Bot
+        ctx.fillStyle = bot.skin.headColor;
         ctx.beginPath(); ctx.arc(bot.x, bot.y, bot.radius, 0, Math.PI * 2); ctx.fill();
 
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(bot.skin.badge, bot.x, bot.y);
+
+        // Nombre del Bot
         ctx.fillStyle = "#fff";
         ctx.font = "11px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(bot.name, bot.x, bot.y - bot.radius - 8);
+        ctx.fillText(bot.name, bot.x, bot.y - bot.radius - 10);
     }
 
-    // 6. Dibujar Jugador con su nombre flotante
+    // 5. Dibujar Jugador con Skin Personalizada
     if (player.alive) {
         for (let bot of bots) {
             for (let segment of bot.trail) {
@@ -248,30 +299,31 @@ function gameLoop() {
             }
         }
 
-        // Cuerpo del Jugador
+        // Cuerpo del Jugador con patrón alternado de la Skin
         for (let i = 0; i < player.trail.length; i++) {
             let p = player.trail[i];
             let size = player.radius * (i / player.trail.length);
-            ctx.fillStyle = "#059669";
+            ctx.fillStyle = (i % 2 === 0) ? player.skin.bodyColor : player.skin.headColor;
             ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(size, 4), 0, Math.PI * 2); ctx.fill();
         }
 
         // Cabeza del Jugador
-        ctx.fillStyle = "#10b981";
+        ctx.fillStyle = player.skin.headColor;
         ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2); ctx.fill();
 
-        // Nombre flotante del usuario (Estilo del video)
+        // Insignia/Sticker en la cabeza
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(player.skin.badge, player.x, player.y);
+
+        // Nombre flotante del usuario
         ctx.fillStyle = "#38bdf8";
         ctx.font = "bold 12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(player.name, player.x, player.y - player.radius - 8);
+        ctx.fillText(player.name, player.x, player.y - player.radius - 10);
     }
 
-    ctx.restore(); // Restaurar la cámara normal para elementos fijos de la interfaz
-
-    // Actualizar barra superior de Cash Out dinámicamente
-    let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
-    // Puedes añadir un elemento en tu HTML con id="cashBarFill" para ver cómo se llena la barra
+    ctx.restore(); // Restaurar contexto para HUD
 
     requestAnimationFrame(gameLoop);
 }
