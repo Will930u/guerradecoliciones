@@ -13,39 +13,31 @@ const WORLD_HEIGHT = 3500;
 
 let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
-// Registro de Skins Temáticas
+// Catálogo de Skins Temáticas
 const skinCatalog = {
     cyber_dragon: {
         name: "Digital Dragon",
-        type: "dragon",
         primaryColor: "#06b6d4",
         secondaryColor: "#3b82f6",
-        headDetail: "DRAGON_CYBER",
-        badge: "🐉"
+        headDetail: "DRAGON_CYBER"
     },
     fire_scale: {
         name: "FireScale Killa",
-        type: "dragon",
         primaryColor: "#ef4444",
         secondaryColor: "#991b1b",
-        headDetail: "DRAGON_FIRE",
-        badge: "🔥"
+        headDetail: "DRAGON_FIRE"
     },
     flag_venezuela: {
         name: "TriColor Runner",
-        type: "flag",
         primaryColor: "#facc15",
         secondaryColor: "#2563eb",
-        headDetail: "FLAG_TRICOLOR",
-        badge: "🇻🇪"
+        headDetail: "FLAG_TRICOLOR"
     },
     clockwork_gator: {
         name: "Clockwork Gator",
-        type: "gator",
         primaryColor: "#d97706",
         secondaryColor: "#78350f",
-        headDetail: "GATOR",
-        badge: "🐊"
+        headDetail: "GATOR"
     }
 };
 
@@ -71,6 +63,7 @@ let player = {
     cashOutGoal: 100000
 };
 
+// Función para cambiar skin desde el panel HTML
 window.selectSkin = function(skinKey) {
     if (skinCatalog[skinKey]) {
         player.skin = skinCatalog[skinKey];
@@ -91,8 +84,6 @@ function spawnPellet() {
     });
 }
 
-let goldCoins = [];
-
 let bots = [
     { name: "FireScale_Killa", skin: skinCatalog.fire_scale, x: WORLD_WIDTH / 2 - 200, y: WORLD_HEIGHT / 2 - 150, score: 140 },
     { name: "TriColor_Runner", skin: skinCatalog.flag_venezuela, x: WORLD_WIDTH / 2 + 250, y: WORLD_HEIGHT / 2 - 100, score: 1250 },
@@ -111,6 +102,32 @@ window.addEventListener('mousemove', (e) => {
     mouse.x = e.clientX;
     mouse.y = e.clientY;
 });
+
+// Funciones del Modal y Depósito
+function openModal() {
+    document.getElementById('depositModal').style.display = 'flex';
+}
+function closeModal() {
+    document.getElementById('depositModal').style.display = 'none';
+}
+function submitPayment() {
+    const ref = document.getElementById('refInput').value;
+    if (!ref) {
+        alert("Por favor ingresa el número de referencia del Pago Móvil.");
+        return;
+    }
+    alert("¡Pago reportado con éxito! Referencia: " + ref);
+    closeModal();
+}
+function attemptCashOut() {
+    if (player.score >= player.cashOutGoal) {
+        alert(`¡Retirada exitosa! Has cobrado $${(player.score * 0.1).toFixed(2)} USD.`);
+        player.score = 0;
+        player.radius = 18;
+    } else {
+        alert("Aún no has llenado la barra superior para retirarte.");
+    }
+}
 
 // Dibujo de Malla de Panal Hexagonal
 function drawHexMap(ctx) {
@@ -153,40 +170,12 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.translate(x, y);
     ctx.rotate(angle);
 
-    // Renderizar Forma según el Tipo de Skin
-    if (skin.headDetail === "DRAGON_CYBER" || skin.headDetail === "DRAGON_FIRE") {
-        // Hocico / Cabeza de Dragón
-        ctx.fillStyle = skin.primaryColor;
-        ctx.beginPath();
-        ctx.moveTo(radius * 1.4, 0);
-        ctx.lineTo(-radius * 0.8, -radius * 0.9);
-        ctx.lineTo(-radius * 0.5, 0);
-        ctx.lineTo(-radius * 0.8, radius * 0.9);
-        ctx.closePath();
-        ctx.fill();
+    ctx.fillStyle = skin.primaryColor;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
 
-        // Cuernos
-        ctx.fillStyle = skin.secondaryColor;
-        ctx.beginPath();
-        ctx.moveTo(-radius * 0.5, -radius * 0.6);
-        ctx.lineTo(-radius * 1.5, -radius * 1.1);
-        ctx.lineTo(-radius * 0.8, -radius * 0.3);
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(-radius * 0.5, radius * 0.6);
-        ctx.lineTo(-radius * 1.5, radius * 1.1);
-        ctx.lineTo(-radius * 0.8, radius * 0.3);
-        ctx.fill();
-    } else {
-        // Cabeza Estándar
-        ctx.fillStyle = skin.primaryColor;
-        ctx.beginPath();
-        ctx.arc(0, 0, radius, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // Ojos Grandes
+    // Ojos
     ctx.fillStyle = "#fff";
     ctx.beginPath();
     ctx.arc(radius * 0.3, -radius * 0.4, 5, 0, Math.PI * 2);
@@ -201,7 +190,7 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
 
     ctx.restore();
 
-    // Etiqueta de Saldo Flotante ($ USD)
+    // Etiqueta de Saldo Flotante
     ctx.save();
     ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
     ctx.strokeStyle = "#10b981";
@@ -252,10 +241,9 @@ function gameLoop() {
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
 
-    // Dibujar Panal Hexagonal
     drawHexMap(ctx);
 
-    // Dibujar Comida
+    // Comida
     for (let p of foodPellets) {
         ctx.fillStyle = p.color;
         ctx.shadowColor = p.color;
@@ -264,7 +252,7 @@ function gameLoop() {
         ctx.shadowBlur = 0;
     }
 
-    // Dibujar Bots
+    // Bots
     bots.forEach(bot => {
         bot.changeTimer++;
         if (bot.changeTimer > 80) {
@@ -277,7 +265,6 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > Math.floor(bot.radius * 2.8)) bot.trail.shift();
 
-        // Cuerpo
         for (let i = 0; i < bot.trail.length; i++) {
             let p = bot.trail[i];
             ctx.fillStyle = (i % 2 === 0) ? bot.skin.primaryColor : bot.skin.secondaryColor;
@@ -287,11 +274,10 @@ function gameLoop() {
         drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
     });
 
-    // Dibujar Jugador
+    // Jugador
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
 
-        // Cuerpo con textura/escamas
         for (let i = 0; i < player.trail.length; i++) {
             let p = player.trail[i];
             let size = player.radius * (i / player.trail.length);
@@ -303,6 +289,11 @@ function gameLoop() {
     }
 
     ctx.restore();
+
+    // Actualizar Barra Cash Out
+    let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
+    let barFill = document.getElementById('cashBarFill');
+    if (barFill) barFill.style.width = progress + '%';
 
     requestAnimationFrame(gameLoop);
 }
