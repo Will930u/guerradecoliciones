@@ -11,6 +11,12 @@ body {
     overflow: hidden;
 }
 
+/* Canvas principal del juego */
+#gameCanvas {
+    display: block;
+    background: #050811;
+}
+
 /* HUD Superior */
 #hud {
     position: absolute;
@@ -31,7 +37,7 @@ body {
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     pointer-events: auto;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
 }
 
 .balance-val {
@@ -72,13 +78,7 @@ body {
     background: #ca8a04;
 }
 
-/* Canvas */
-#gameCanvas {
-    display: block;
-    background: #050811;
-}
-
-/* Barra superior de Cash Out (Estilo dinámico) */
+/* Barra superior de Cash Out dinámico */
 #cashOutHUD {
     position: absolute;
     top: 20px;
@@ -93,6 +93,7 @@ body {
     gap: 15px;
     z-index: 10;
     box-shadow: 0 0 15px rgba(234, 179, 8, 0.4);
+    pointer-events: auto;
 }
 
 .cash-bar-container {
@@ -125,6 +126,74 @@ body {
     color: #fff;
 }
 
+/* Panel de Galería y Selección de Skins (Estilo Lateral) */
+#skinGallery {
+    position: absolute;
+    top: 80px;
+    left: 15px;
+    width: 220px;
+    max-height: calc(100vh - 100px);
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid #38bdf8;
+    border-radius: 12px;
+    padding: 12px;
+    overflow-y: auto;
+    z-index: 20;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+}
+
+.gallery-title {
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #38bdf8;
+    margin-bottom: 10px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.skin-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.skin-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 6px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.skin-card:hover, .skin-card.active {
+    border-color: #10b981;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+    background: #0f172a;
+}
+
+.skin-card img {
+    width: 100%;
+    height: 55px;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+.skin-card label {
+    display: block;
+    font-size: 0.7rem;
+    color: #cbd5e1;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
 /* Ventanas Flotantes / Modales */
 .modal-overlay {
     position: fixed;
@@ -147,7 +216,7 @@ body {
     width: 90%;
     max-width: 400px;
     border: 1px solid #334155;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
 }
 
 .modal-header {
