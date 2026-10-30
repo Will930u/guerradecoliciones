@@ -22,6 +22,11 @@ let currentUserId = localStorage.getItem('supabase_user_id') || "00000000-0000-0
 let isGameActive = false;
 const ENTRY_FEE = 2.00; 
 let verificationInterval = null;
+let cashOutCheckInterval = null;
+
+// Límite de crecimiento moderado (máximo 10 veces el tamaño inicial de 30)
+const INITIAL_SEGMENTS = 30;
+const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 10; // 300 segmentos máximo
 
 let supabaseClient = null;
 async function initSupabase() {
@@ -87,6 +92,9 @@ setTimeout(syncUserWallet, 1500);
 function startWaitingForApproval() {
     showFloatingMessage("⏳ Pago reportado. Esperando aprobación en Telegram...", "#eab308");
     
+    let modalTitle = document.getElementById('modalTitle');
+    if (modalTitle) modalTitle.innerText = "Verificando Pago ($2.00)";
+
     let modalBody = document.getElementById('modalBodyContent');
     if (modalBody) {
         modalBody.innerHTML = `
@@ -141,7 +149,7 @@ function startArenaGame() {
     player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
     player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
     player.score = 0;
-    player.maxSegments = 30;
+    player.maxSegments = INITIAL_SEGMENTS;
     player.trail = [];
 
     let gallery = document.getElementById('skinGallery');
@@ -178,9 +186,7 @@ async function submitPayment() {
 
         let response = await fetch(`${BACKEND_URL}/api/payment/report`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
 
@@ -197,6 +203,87 @@ async function submitPayment() {
         console.error("Error al conectar con el backend:", error);
         showFloatingMessage("Error de conexión con el backend.", "#ef4444");
     }
+}
+
+// 5. SOLICITUD DE RETIRO (CASH OUT) Y NOTIFICACIÓN A TELEGRAM
+async function attemptCashOut() {
+    if (player.score < player.cashOutGoal) {
+        showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
+        return;
+    }
+
+    let amountUSD = (player.score * 0.1).toFixed(2);
+    let rate = window.currentBcvRate || 36.50;
+    let amountVES = (amountUSD * rate).toFixed(2);
+
+    let modalTitle = document.getElementById('modalTitle');
+    if (modalTitle) modalTitle.innerText = "Procesando Retiro ($" + amountUSD + ")";
+
+    let modalBody = document.getElementById('modalBodyContent');
+    if (modalBody) {
+        modalBody.innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+                <div style="font-size: 2.5rem; margin-bottom: 10px;">💸</div>
+                <p style="color: #eab308; font-weight: bold; font-size: 1.1rem;">Solicitud de Retiro Enviada</p>
+                <p style="font-size: 0.9rem; color: #94a3b8; margin-top: 8px;">Monto: <strong>$${amountUSD} USD</strong> (Bs. ${amountVES})</p>
+                <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">Esperando que el Administrador procese el pago en Telegram...</p>
+            </div>
+        `;
+    }
+    document.getElementById('depositModal').style.display = 'flex';
+
+    try {
+        let response = await fetch(`${BACKEND_URL}/api/cashout/request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: currentUserId,
+                amount_usd: amountUSD,
+                amount_ves: amountVES,
+                bcv_rate: rate
+            })
+        });
+
+        let result = await response.json();
+        if (response.ok && result.success) {
+            startWaitingForCashOutApproval(amountUSD);
+        } else {
+            showFloatingMessage(result.error || "Error al solicitar retiro.", "#ef4444");
+            closeModal();
+        }
+    } catch (err) {
+        console.error("Error al solicitar retiro:", err);
+        showFloatingMessage("Error de conexión al solicitar retiro.", "#ef4444");
+        closeModal();
+    }
+}
+
+// Sondeo para detectar cuando el administrador aprueba el pago del retiro
+function startWaitingForCashOutApproval(amountUSD) {
+    if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
+
+    cashOutCheckInterval = setInterval(async () => {
+        if (!supabaseClient || !currentUserId) return;
+
+        try {
+            const { data: wallet } = await supabaseClient
+                .from('user_wallets')
+                .select('total_earnings_usd')
+                .eq('user_id', currentUserId)
+                .single();
+
+            // Verificamos si la transacción fue completada por el administrador
+            // (Simulación de detección de estado pagado o actualización de ganancias)
+            // Una vez confirmado por el admin:
+            // clearInterval(cashOutCheckInterval);
+            // closeModal();
+            // showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado con éxito por el Admin! 🚀`, "#10b981");
+            // player.score = 0;
+            // player.maxSegments = INITIAL_SEGMENTS;
+        } catch (e) {
+            console.error("Error en sondeo de retiro:", e);
+        }
+    }, 4000);
 }
 // ==========================================
 
@@ -224,10 +311,10 @@ let player = {
     x: WORLD_WIDTH / 2,
     y: WORLD_HEIGHT / 2,
     radius: 18,
-    maxSegments: 30,
+    maxSegments: INITIAL_SEGMENTS,
     speed: 4.2,
     trail: [],
-    alive: false, // Inicia inactivo hasta pagar
+    alive: false,
     score: 0,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
@@ -271,7 +358,7 @@ function spawnPellet() {
 let goldCoins = [];
 
 function createGoldCoinsFromCollision(trail) {
-    let coinsCount = 100; // 100 monedas de $0.01 USD
+    let coinsCount = 100;
     for (let i = 0; i < coinsCount; i++) {
         let randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
         goldCoins.push({
@@ -312,7 +399,7 @@ function spawnBorderBot(name, skin) {
         x: sx,
         y: sy,
         radius: 18,
-        maxSegments: 30,
+        maxSegments: INITIAL_SEGMENTS,
         speed: 3.2,
         angle: sAngle,
         changeTimer: 0,
@@ -328,6 +415,9 @@ window.addEventListener('mousemove', (e) => {
 });
 
 function openModal() {
+    let modalTitle = document.getElementById('modalTitle');
+    if (modalTitle) modalTitle.innerText = "Recargar Entrada ($2.00)";
+
     let modalBody = document.getElementById('modalBodyContent');
     if (modalBody) {
         modalBody.innerHTML = `
@@ -349,16 +439,6 @@ function openModal() {
 
 function closeModal() {
     document.getElementById('depositModal').style.display = 'none';
-}
-
-function attemptCashOut() {
-    if (player.score >= player.cashOutGoal) {
-        showFloatingMessage(`¡Retirada exitosa! Cobrado $${(player.score * 0.1).toFixed(2)} USD.`, "#eab308");
-        player.score = 0;
-        player.maxSegments = 30;
-    } else {
-        showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
-    }
 }
 
 function drawHexMap(ctx) {
@@ -474,20 +554,22 @@ function gameLoop() {
 
     drawHexMap(ctx);
 
-    // Comida Pequeña
+    // Comida Pequeña (Con límite moderado de crecimiento)
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
 
         if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
-            player.maxSegments += 1;
+            if (player.maxSegments < MAX_SEGMENTS_LIMIT) {
+                player.maxSegments += 1;
+            }
             foodPellets.splice(i, 1);
             spawnPellet();
         }
     }
 
-    // Monedas / Orbes de $0.01 USD
+    // Monedas / Orbes de $0.01 USD (Con límite moderado de crecimiento)
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -495,7 +577,9 @@ function gameLoop() {
 
         if (player.alive && isGameActive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
             player.score += coin.value;
-            player.maxSegments += 2;
+            if (player.maxSegments < MAX_SEGMENTS_LIMIT) {
+                player.maxSegments += Math.min(2, MAX_SEGMENTS_LIMIT - player.maxSegments);
+            }
             goldCoins.splice(i, 1);
         }
     }
@@ -560,7 +644,6 @@ function gameLoop() {
                     createGoldCoinsFromCollision(player.trail);
                     showFloatingMessage("💥 ¡Colisión! Perdiste tu entrada y soltaste monedas en la arena.", "#ef4444");
                     
-                    // Mostrar de nuevo la galería para nueva selección/recarga
                     let gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
                     break;
@@ -568,7 +651,7 @@ function gameLoop() {
             }
         }
 
-        // 2. COLISIÓN DEL BOT CONTRA LA ESTELA DEL JUGADOR (EL BOT MUERE - ¡ RESTAURADO ! )
+        // 2. COLISIÓN DEL BOT CONTRA LA ESTELA DEL JUGADOR (EL BOT MUERE)
         if (player.alive && isGameActive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
@@ -598,9 +681,27 @@ function gameLoop() {
 
     ctx.restore();
 
+    // Control dinámico de la barra y el botón de Cash Out
     let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
     let barFill = document.getElementById('cashBarFill');
     if (barFill) barFill.style.width = progress + '%';
+
+    let cashOutBtn = document.getElementById('cashOutBtn');
+    if (cashOutBtn) {
+        if (player.score >= player.cashOutGoal) {
+            cashOutBtn.disabled = false;
+            cashOutBtn.style.opacity = '1';
+            cashOutBtn.style.cursor = 'pointer';
+            cashOutBtn.style.background = '#eab308';
+            cashOutBtn.style.color = '#000';
+        } else {
+            cashOutBtn.disabled = true;
+            cashOutBtn.style.opacity = '0.5';
+            cashOutBtn.style.cursor = 'not-allowed';
+            cashOutBtn.style.background = '#64748b';
+            cashOutBtn.style.color = '#fff';
+        }
+    }
 
     requestAnimationFrame(gameLoop);
 }
