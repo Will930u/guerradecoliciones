@@ -13,7 +13,7 @@ const WORLD_HEIGHT = 3500;
 
 let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
-// Catálogo de Skins Temáticas con Tonos Neón y Sombras
+// Catálogo de Skins Temáticas
 const skinCatalog = {
     cyber_dragon: {
         name: "Digital Dragon",
@@ -39,14 +39,13 @@ const skinCatalog = {
 
 const skinKeys = Object.keys(skinCatalog);
 
-// Configuración de la Cámara con Zoom Dinámico
+// Cámara con Zoom Dinámico
 let camera = {
     x: 0,
     y: 0,
     zoom: 1.0,
     targetZoom: 1.0,
     update(targetX, targetY, playerRadius) {
-        // El zoom se aleja suavemente conforme el gusano va creciendo
         this.targetZoom = Math.max(0.4, 1.0 - (playerRadius - 18) * 0.008);
         this.zoom += (this.targetZoom - this.zoom) * 0.05;
 
@@ -62,20 +61,20 @@ let player = {
     speed: 4.2,
     trail: [],
     alive: true,
-    score: 1500,
+    score: 0, // Inicia en $0 USD reales
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
     cashOutGoal: 100000
 };
 
-// Selector de Skin desde HTML
+// Selector de Skin
 window.selectSkin = function(skinKey) {
     if (skinCatalog[skinKey]) {
         player.skin = skinCatalog[skinKey];
     }
 };
 
-// Notificaciones Flotantes (No bloqueantes)
+// Notificaciones Flotantes
 function showFloatingMessage(text, color = "#10b981") {
     let notif = document.getElementById('floatingNotification');
     if (!notif) return;
@@ -89,7 +88,7 @@ function showFloatingMessage(text, color = "#10b981") {
     }, 3000);
 }
 
-// Comida pequeña normal (Pepitas Neón)
+// Comida pequeña normal (Pepitas Neón - NO DAN DINERO, SOLO CRECIMIENTO MÍNIMO)
 let foodPellets = [];
 for (let i = 0; i < 450; i++) {
     spawnPellet();
@@ -100,27 +99,29 @@ function spawnPellet() {
         x: Math.random() * WORLD_WIDTH,
         y: Math.random() * WORLD_HEIGHT,
         radius: 4.5,
-        color: Math.random() > 0.5 ? '#ef4444' : '#10b981',
-        value: 50
+        color: Math.random() > 0.5 ? '#ef4444' : '#10b981'
     });
 }
 
-// Monedas doradas grandes (Botín de gusanos caídos)
+// Monedas doradas grandes (Botín de gusanos caídos - SÍ SUMAN SALDO Y TAMAÑO)
 let goldCoins = [];
 
-function createGoldCoins(trail) {
+function createGoldCoins(trail, totalScore) {
+    let coinsCount = Math.max(5, Math.floor(trail.length / 2));
+    let valuePerCoin = Math.max(10, Math.floor(totalScore / coinsCount));
+
     for (let i = 0; i < trail.length; i += 2) {
         goldCoins.push({
             x: trail[i].x + (Math.random() - 0.5) * 20,
             y: trail[i].y + (Math.random() - 0.5) * 20,
             radius: 8,
             color: '#eab308',
-            value: 300
+            value: valuePerCoin
         });
     }
 }
 
-// Lista de Nombres para los Bots
+// Nombres para los Bots
 const botNamesList = [
     "ViperKilla", "ShadowHunter", "AlphaOmega", "NeonVenom", "ToxicSerpent",
     "ApexPredator", "CyberCobra", "GoldenScale", "DragonsLair", "TitanPython",
@@ -153,7 +154,7 @@ function spawnBorderBot(name, skin) {
         angle: sAngle,
         changeTimer: 0,
         trail: [],
-        score: Math.floor(Math.random() * 2000) + 500,
+        score: Math.floor(Math.random() * 1000) + 200,
         alive: true
     });
 }
@@ -189,7 +190,7 @@ function attemptCashOut() {
     }
 }
 
-// Dibujo de Malla Hexagonal Oscura
+// Dibujo de Malla Hexagonal
 function drawHexMap(ctx) {
     const hexRadius = 45;
     const hexWidth = Math.sqrt(3) * hexRadius;
@@ -224,7 +225,7 @@ function drawHexMap(ctx) {
     }
 }
 
-// Renderizador de Gusano Orgánico con Anillos 3D y Sombra Neón
+// Renderizador de Gusano Orgánico
 function drawOrganicBody(ctx, trail, radius, skin) {
     for (let i = trail.length - 1; i >= 0; i--) {
         let p = trail[i];
@@ -256,7 +257,7 @@ function drawOrganicBody(ctx, trail, radius, skin) {
     }
 }
 
-// Renderizador de Cabeza Neón con Etiqueta de Dinero
+// Renderizador de Cabeza Neón
 function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.save();
     ctx.translate(x, y);
@@ -318,7 +319,6 @@ function gameLoop() {
 
     // 1. Movimiento del Jugador
     if (player.alive) {
-        // Convertir la posición del mouse considerando el zoom activo
         let worldMouseX = mouse.x / camera.zoom + camera.x;
         let worldMouseY = mouse.y / camera.zoom + camera.y;
 
@@ -337,18 +337,16 @@ function gameLoop() {
         player.trail.push({ x: player.x, y: player.y, angle: angle });
         if (player.trail.length > Math.floor(player.radius * 2.8)) player.trail.shift();
 
-        // Actualizar cámara con zoom dinámico basado en el radio del jugador
         camera.update(player.x, player.y, player.radius);
     }
 
     ctx.save();
-    // Aplicar el desplazamiento de la cámara y el zoom dinámico
     ctx.translate(-camera.x * camera.zoom, -camera.y * camera.zoom);
     ctx.scale(camera.zoom, camera.zoom);
 
     drawHexMap(ctx);
 
-    // 2. Comida Pequeña
+    // 2. Comida Pequeña (SOLO AUMENTA TAMAÑO, NO SUMA SALDO EN USD)
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -358,14 +356,13 @@ function gameLoop() {
         ctx.shadowBlur = 0;
 
         if (player.alive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
-            player.score += p.value;
-            player.radius += 0.05;
+            player.radius += 0.03; // Crecimiento físico mínimo
             foodPellets.splice(i, 1);
             spawnPellet();
         }
     }
 
-    // 3. Monedas Doradas
+    // 3. Monedas Doradas (AUMENTAN SALDO REAL EN USD Y TAMAÑO)
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -375,13 +372,13 @@ function gameLoop() {
         ctx.shadowBlur = 0;
 
         if (player.alive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
-            player.score += coin.value;
-            player.radius += 0.2;
+            player.score += coin.value; // ¡Aquí sí suma saldo en USD!
+            player.radius += 0.25;      // Crecimiento de masa significativo
             goldCoins.splice(i, 1);
         }
     }
 
-    // 4. IA de los 20 Bots
+    // 4. IA de los Bots
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -454,12 +451,32 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > Math.floor(bot.radius * 2.8)) bot.trail.shift();
 
+        // Recolección de comida por los Bots (Solo aumenta tamaño)
+        for (let i = foodPellets.length - 1; i >= 0; i--) {
+            let p = foodPellets[i];
+            if (Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
+                bot.radius += 0.02;
+                foodPellets.splice(i, 1);
+                spawnPellet();
+            }
+        }
+
+        // Recolección de monedas por los Bots (Suma saldo y tamaño)
+        for (let i = goldCoins.length - 1; i >= 0; i--) {
+            let coin = goldCoins[i];
+            if (Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
+                bot.score += coin.value;
+                bot.radius += 0.15;
+                goldCoins.splice(i, 1);
+            }
+        }
+
         // Colisiones
         if (player.alive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
-                    createGoldCoins(bot.trail);
-                    showFloatingMessage(`¡Eliminaste a ${bot.name}!`, "#10b981");
+                    createGoldCoins(bot.trail, bot.score);
+                    showFloatingMessage(`¡Eliminaste a ${bot.name}! Dejó botín en oro.`, "#10b981");
                     let deadName = bot.name;
                     let deadSkin = bot.skin;
                     bots.splice(bIndex, 1);
@@ -473,13 +490,13 @@ function gameLoop() {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
-                    createGoldCoins(player.trail);
+                    createGoldCoins(player.trail, player.score);
                     showFloatingMessage("¡Chocaste contra un rival y perdiste!", "#ef4444");
                     setTimeout(() => {
                         player.x = WORLD_WIDTH / 2;
                         player.y = WORLD_HEIGHT / 2;
                         player.radius = 18;
-                        player.score = 500;
+                        player.score = 0;
                         player.trail = [];
                         player.alive = true;
                     }, 1000);
