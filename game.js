@@ -137,6 +137,13 @@ function startWaitingForApproval() {
 // 3. INICIO DE LA ARENA
 function startArenaGame() {
     isGameActive = true;
+    player.alive = true;
+    player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
+    player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
+    player.score = 0;
+    player.maxSegments = 30;
+    player.trail = [];
+
     let gallery = document.getElementById('skinGallery');
     if (gallery) gallery.style.display = 'none';
     
@@ -187,7 +194,7 @@ async function submitPayment() {
             showFloatingMessage(result.error || "Error al registrar el pago.", "#ef4444");
         }
     } catch (error) {
-        console.error("Error al conectar con el servidor:", error);
+        console.error("Error al conectar con el backend:", error);
         showFloatingMessage("Error de conexión con el backend.", "#ef4444");
     }
 }
@@ -220,7 +227,7 @@ let player = {
     maxSegments: 30,
     speed: 4.2,
     trail: [],
-    alive: true,
+    alive: false, // Inicia inactivo hasta pagar
     score: 0,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
@@ -320,7 +327,6 @@ window.addEventListener('mousemove', (e) => {
     mouse.y = e.clientY;
 });
 
-// Función para abrir el modal restaurando siempre el formulario limpio
 function openModal() {
     let modalBody = document.getElementById('modalBodyContent');
     if (modalBody) {
@@ -545,7 +551,7 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-        // Colisión del jugador con el bot
+        // 1. COLISIÓN DEL JUGADOR CONTRA EL BOT (EL JUGADOR MUERE)
         if (player.alive && isGameActive && !player.invincible) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
@@ -554,19 +560,25 @@ function gameLoop() {
                     createGoldCoinsFromCollision(player.trail);
                     showFloatingMessage("💥 ¡Colisión! Perdiste tu entrada y soltaste monedas en la arena.", "#ef4444");
                     
-                    // Devolver al menú principal / galería de skins de forma limpia
+                    // Mostrar de nuevo la galería para nueva selección/recarga
                     let gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
+                    break;
+                }
+            }
+        }
 
-                    setTimeout(() => {
-                        player.x = WORLD_WIDTH / 2;
-                        player.y = WORLD_HEIGHT / 2;
-                        player.radius = 18;
-                        player.maxSegments = 30;
-                        player.score = 0;
-                        player.trail = [];
-                        player.alive = true;
-                    }, 1500);
+        // 2. COLISIÓN DEL BOT CONTRA LA ESTELA DEL JUGADOR (EL BOT MUERE - ¡ RESTAURADO ! )
+        if (player.alive && isGameActive) {
+            for (let segment of player.trail) {
+                if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
+                    createGoldCoinsFromCollision(bot.trail);
+                    showFloatingMessage(`¡${bot.name} chocó contra ti y fue eliminado!`, "#10b981");
+                    
+                    let deadName = bot.name;
+                    let deadSkin = bot.skin;
+                    bots.splice(bIndex, 1);
+                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
                     break;
                 }
             }
