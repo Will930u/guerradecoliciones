@@ -1,0 +1,124 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: #070c16;
+    color: #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.login-container {
+    background: #0f172a;
+    border: 2px solid #1e293b;
+    border-radius: 12px;
+    padding: 30px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.login-header h1 {
+    color: #10b981;
+    font-size: 24px;
+    margin-bottom: 8px;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.login-header p {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+.input-group {
+    margin-bottom: 18px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: #cbd5e1;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 12px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.input-group input:focus {
+    border-color: #10b981;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 25px;
+}
+
+.btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 14px;
+    transition: opacity 0.2s;
+}
+
+.btn.primary {
+    background-color: #10b981;
+    color: #070c16;
+}
+
+.btn.secondary {
+    background-color: #1e293b;
+    color: #cbd5e1;
+    border: 1px solid #334155;
+}
+
+.btn:hover {
+    opacity: 0.9;
+}
+
+.auth-message {
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: center;
+    display: none;
+}
+
+.auth-message.error {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid #ef4444;
+    color: #fca5a5;
+    display: block;
+}
+
+.auth-message.success {
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid #10b981;
+    color: #6ee7b7;
+    display: block;
+}
