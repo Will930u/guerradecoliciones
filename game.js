@@ -24,7 +24,7 @@ const ENTRY_FEE = 2.00;
 let verificationInterval = null;
 let cashOutCheckInterval = null;
 
-// Límite de crecimiento: El doble de lo limitado (20 veces el tamaño inicial de 30 = 600 segmentos)
+// Límite de crecimiento: 20 veces el tamaño inicial de 30 = 600 segmentos
 const INITIAL_SEGMENTS = 30;
 const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20; 
 
@@ -205,12 +205,16 @@ async function submitPayment() {
     }
 }
 
-// 5. SOLICITUD DE RETIRO (CASH OUT) Y NOTIFICACIÓN A TELEGRAM
+// 5. SOLICITUD DE RETIRO (CASH OUT): SACA AL JUGADOR, MUESTRA CARGANDO Y MONITOREA EL PAGO
 async function attemptCashOut() {
     if (player.score < player.cashOutGoal) {
         showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
         return;
     }
+
+    // Sacar al usuario de la partida de inmediato
+    isGameActive = false;
+    player.alive = false;
 
     let amountUSD = (player.score * 0.1).toFixed(2);
     let rate = window.currentBcvRate || 36.50;
@@ -222,11 +226,11 @@ async function attemptCashOut() {
     let modalBody = document.getElementById('modalBodyContent');
     if (modalBody) {
         modalBody.innerHTML = `
-            <div style="text-align: center; padding: 20px;">
-                <div style="font-size: 2.5rem; margin-bottom: 10px;">💸</div>
-                <p style="color: #eab308; font-weight: bold; font-size: 1.1rem;">Solicitud de Retiro Enviada</p>
-                <p style="font-size: 0.9rem; color: #94a3b8; margin-top: 8px;">Monto: <strong>$${amountUSD} USD</strong> (Bs. ${amountVES})</p>
-                <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">Esperando que el Administrador procese el pago en Telegram...</p>
+            <div style="text-align: center; padding: 25px;">
+                <div style="font-size: 2.8rem; margin-bottom: 15px;">⏳</div>
+                <p style="color: #eab308; font-weight: bold; font-size: 1.2rem;">Cargando Retiro...</p>
+                <p style="font-size: 0.95rem; color: #94a3b8; margin-top: 10px;">Monto: <strong>$${amountUSD} USD</strong> (Bs. ${amountVES})</p>
+                <p style="font-size: 0.85rem; color: #64748b; margin-top: 8px;">El Administrador está procesando tu pago móvil a tus datos registrados. Espera la confirmación...</p>
             </div>
         `;
     }
@@ -250,14 +254,19 @@ async function attemptCashOut() {
         } else {
             showFloatingMessage(result.error || "Error al solicitar retiro.", "#ef4444");
             closeModal();
+            let gallery = document.getElementById('skinGallery');
+            if (gallery) gallery.style.display = 'block';
         }
     } catch (err) {
         console.error("Error al solicitar retiro:", err);
         showFloatingMessage("Error de conexión al solicitar retiro.", "#ef4444");
         closeModal();
+        let gallery = document.getElementById('skinGallery');
+        if (gallery) gallery.style.display = 'block';
     }
 }
 
+// Sondeo automático para detectar cuando el administrador marca el pago como realizado en Telegram
 function startWaitingForCashOutApproval(amountUSD) {
     if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
 
@@ -265,11 +274,34 @@ function startWaitingForCashOutApproval(amountUSD) {
         if (!supabaseClient || !currentUserId) return;
 
         try {
-            const { data: wallet } = await supabaseClient
-                .from('user_wallets')
-                .select('total_earnings_usd')
+            const { data: txs, error } = await supabaseClient
+                .from('payment_transactions')
+                .select('*')
                 .eq('user_id', currentUserId)
-                .single();
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (txs && txs.length > 0) {
+                let tx = txs[0];
+                if (tx.status === 'paid') {
+                    clearInterval(cashOutCheckInterval);
+                    cashOutCheckInterval = null;
+
+                    // 1. Cerrar el modal de carga
+                    closeModal();
+
+                    // 2. Mostrar notificación flotante de éxito al usuario
+                    showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado con éxito a tu cuenta! 🚀`, "#10b981");
+
+                    // 3. Reiniciar puntaje y segmentos
+                    player.score = 0;
+                    player.maxSegments = INITIAL_SEGMENTS;
+
+                    // 4. Mostrar de nuevo la galería de skins / menú principal
+                    let gallery = document.getElementById('skinGallery');
+                    if (gallery) gallery.style.display = 'block';
+                }
+            }
         } catch (e) {
             console.error("Error en sondeo de retiro:", e);
         }
@@ -308,7 +340,7 @@ let player = {
     score: 0,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
-    cashOutGoal: 50.0, // Meta realista para que la barra avance y se llene correctamente
+    cashOutGoal: 50.0, // Meta realista para la barra
     invincible: false
 };
 
@@ -544,7 +576,7 @@ function gameLoop() {
 
     drawHexMap(ctx);
 
-    // Comida Pequeña (Con límite duplicado de crecimiento: hasta 600 segmentos)
+    // Comida Pequeña (Con límite de 600 segmentos)
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -559,7 +591,7 @@ function gameLoop() {
         }
     }
 
-    // Monedas / Orbes de $0.01 USD (Con límite duplicado de crecimiento)
+    // Monedas / Orbes de $0.01 USD
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -671,7 +703,7 @@ function gameLoop() {
 
     ctx.restore();
 
-    // Control dinámico de la barra y el botón de Cash Out corregido
+    // Control de la barra y el botón de Cash Out
     let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
     let barFill = document.getElementById('cashBarFill');
     if (barFill) barFill.style.width = progress + '%';
