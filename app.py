@@ -1,9 +1,12 @@
 import os
 import requests
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from supabase import Client, create_client
 
 app = Flask(__name__)
+# Habilitar CORS para permitir peticiones desde el navegador (GitHub Pages)
+CORS(app)
 
 # Cargar de forma segura las variables de entorno configuradas en Render
 SUPABASE_URL = os.getenv("SUPABASE_URL")
