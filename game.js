@@ -13,6 +13,79 @@ const WORLD_HEIGHT = 3500;
 
 let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
+// ==========================================
+// CONFIGURACIÓN DE BACKEND Y SUPABASE
+// ==========================================
+const BACKEND_URL = "https://tu-app-en-render.onrender.com"; // Reemplaza con la URL real de tu servicio en Render
+let currentUserId = "00000000-0000-0000-0000-000000000000"; // ID provisional (reemplazar con supabase.auth.getUser() al implementar Auth)
+
+// 1. Obtener la Tasa BCV desde la API oficial y mostrarla en la interfaz del juego
+async function syncBcvRate() {
+    try {
+        let response = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
+        let data = await response.json();
+        if (data && data.promedio) {
+            let rate = data.promedio.toFixed(2);
+            let rateElem = document.getElementById('bcvRate');
+            if (rateElem) rateElem.innerText = `${rate}`;
+            window.currentBcvRate = parseFloat(rate);
+        }
+    } catch (error) {
+        console.error("Error al consultar la tasa BCV:", error);
+    }
+}
+syncBcvRate();
+
+// 2. Función para reportar un Pago Móvil enviando los datos al backend app.py
+async function submitPayment() {
+    const refInput = document.getElementById('refInput');
+    const ref = refInput ? refInput.value.trim() : "";
+    
+    if (!ref) {
+        showFloatingMessage("Por favor ingresa el número de referencia.", "#ef4444");
+        return;
+    }
+
+    let rate = window.currentBcvRate || 36.50;
+    let amountUSD = 2.00;
+    let amountVES = (amountUSD * rate).toFixed(2);
+
+    let payload = {
+        user_id: currentUserId,
+        amount_usd: amountUSD,
+        bcv_rate: rate,
+        amount_ves: amountVES,
+        reference_number: ref,
+        phone_number: "0412-1234567"
+    };
+
+    try {
+        showFloatingMessage("Enviando comprobante al servidor...", "#eab308");
+
+        let response = await fetch(`${BACKEND_URL}/api/payment/report`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        let result = await response.json();
+
+        if (response.ok && result.success) {
+            showFloatingMessage("¡Pago reportado! Notificación enviada al Administrador.", "#10b981");
+            if (refInput) refInput.value = "";
+            closeModal();
+        } else {
+            showFloatingMessage(result.error || "Error al registrar el pago.", "#ef4444");
+        }
+    } catch (error) {
+        console.error("Error al conectar con el servidor:", error);
+        showFloatingMessage("Error de conexión con el backend.", "#ef4444");
+    }
+}
+// ==========================================
+
 // Catálogo de Skins Temáticas
 const skinCatalog = {
     cyber_dragon: {
@@ -170,15 +243,7 @@ function openModal() {
 function closeModal() {
     document.getElementById('depositModal').style.display = 'none';
 }
-function submitPayment() {
-    const ref = document.getElementById('refInput').value;
-    if (!ref) {
-        showFloatingMessage("Por favor ingresa el número de referencia.", "#ef4444");
-        return;
-    }
-    showFloatingMessage("¡Pago reportado con éxito!", "#10b981");
-    closeModal();
-}
+
 function attemptCashOut() {
     if (player.score >= player.cashOutGoal) {
         showFloatingMessage(`¡Retirada exitosa! Cobrado $${(player.score * 0.1).toFixed(2)} USD.`, "#eab308");
@@ -352,7 +417,7 @@ function gameLoop() {
         }
     }
 
-    // 4. IA TÁCTICA DE LOS BOTS (Defensiva, corte de trayectoria y búsqueda de oro)
+    // 4. IA TÁCTICA DE LOS BOTS
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -362,20 +427,16 @@ function gameLoop() {
         let targetX = null;
         let targetY = null;
 
-        // A) ESTRATEGIA DE CORTE TÁCTICO CONTRA EL JUGADOR:
-        // En lugar de ir directo a chocar, el bot calcula la posición futura del jugador para cruzarse en su camino
         if (player.alive) {
             let dPlayer = Math.hypot(bot.x - player.x, bot.y - player.y);
             if (dPlayer < 550) {
                 closestDist = dPlayer;
                 let playerHeading = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-                // Apuntar 120 píxeles más adelante de por donde va el jugador para cortarle el paso
                 targetX = player.x + Math.cos(playerHeading) * 120;
                 targetY = player.y + Math.sin(playerHeading) * 120;
             }
         }
 
-        // B) Si no hay jugador cerca, buscar monedas doradas
         if (!targetX) {
             for (let coin of goldCoins) {
                 let d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
@@ -397,13 +458,11 @@ function gameLoop() {
             }
         }
 
-        // C) ESQUIVA INTELIGENTE DE SUPERVIVENCIA (El bot nunca se inmola):
-        // Si detecta cualquier segmento del jugador o de otro bot muy cerca de su cabeza, gira bruscamente para huir
         let emergencyTurn = false;
         if (player.alive) {
             for (let seg of player.trail) {
                 if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < 70) {
-                    targetAngle += Math.PI * 0.8; // Giro evasivo de emergencia
+                    targetAngle += Math.PI * 0.8;
                     emergencyTurn = true;
                     break;
                 }
@@ -429,14 +488,12 @@ function gameLoop() {
         bot.x += Math.cos(bot.angle) * bot.speed;
         bot.y += Math.sin(bot.angle) * bot.speed;
 
-        // Rebote en bordes del mapa
         if (bot.x < 50 || bot.x > WORLD_WIDTH - 50) bot.angle = Math.PI - bot.angle;
         if (bot.y < 50 || bot.y > WORLD_HEIGHT - 50) bot.angle = -bot.angle;
 
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-        // Recolección de comida y oro por los bots
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             let p = foodPellets[i];
             if (Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
@@ -455,7 +512,6 @@ function gameLoop() {
             }
         }
 
-        // Colisión: Bot choca contra Jugador -> El bot choca y muere (dejando oro)
         if (player.alive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
@@ -470,12 +526,11 @@ function gameLoop() {
             }
         }
 
-        // Colisión: Jugador choca contra el cuerpo del Bot -> Muere el Jugador
         if (player.alive && bot.alive && !player.invincible) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
-                    createGoldCoins(player.trail, player.score);
+                    createGoldCoins(bot.trail, bot.score);
                     showFloatingMessage("¡Chocaste contra el cuerpo del rival y perdiste!", "#ef4444");
                     setTimeout(() => {
                         player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
@@ -508,7 +563,6 @@ function gameLoop() {
 
     ctx.restore();
 
-    // Actualizar Barra Cash Out
     let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
     let barFill = document.getElementById('cashBarFill');
     if (barFill) barFill.style.width = progress + '%';
