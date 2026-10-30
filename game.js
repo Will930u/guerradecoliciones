@@ -39,19 +39,19 @@ const skinCatalog = {
 
 const skinKeys = Object.keys(skinCatalog);
 
-// Cámara con Zoom Dinámico
+// Cámara centrada en el jugador
 let camera = {
     x: 0,
     y: 0,
     zoom: 1.0,
     targetZoom: 1.0,
     update(targetX, targetY, playerRadius) {
-        this.targetZoom = Math.max(0.4, 1.0 - (playerRadius - 18) * 0.008);
+        this.targetZoom = Math.max(0.5, 1.0 - (playerRadius - 18) * 0.005);
         this.zoom += (this.targetZoom - this.zoom) * 0.05;
 
-        // Centrar perfectamente la cámara en el objetivo
-        this.x = targetX - canvas.width / (2 * this.zoom);
-        this.y = targetY - canvas.height / (2 * this.zoom);
+        // Centrar perfectamente la cámara en la posición global del jugador
+        this.x = targetX - (canvas.width / 2) / this.zoom;
+        this.y = targetY - (canvas.height / 2) / this.zoom;
     }
 };
 
@@ -59,16 +59,17 @@ let player = {
     x: WORLD_WIDTH / 2,
     y: WORLD_HEIGHT / 2,
     radius: 18,
-    speed: 4.2,
+    speed: 4.2, // Velocidad constante
     trail: [],
     alive: true,
     score: 0,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
-    cashOutGoal: 100000
+    cashOutGoal: 100000,
+    invincible: false
 };
 
-// Selector de Skin
+// Selector de Skin desde HTML
 window.selectSkin = function(skinKey) {
     if (skinCatalog[skinKey]) {
         player.skin = skinCatalog[skinKey];
@@ -89,7 +90,7 @@ function showFloatingMessage(text, color = "#10b981") {
     }, 3000);
 }
 
-// Comida pequeña normal (Pepitas Neón)
+// Comida pequeña (Pepitas Neón)
 let foodPellets = [];
 for (let i = 0; i < 450; i++) {
     spawnPellet();
@@ -191,7 +192,7 @@ function attemptCashOut() {
     }
 }
 
-// Dibujo de Malla Hexagonal
+// Dibujo de Malla Hexagonal Oscura
 function drawHexMap(ctx) {
     const hexRadius = 45;
     const hexWidth = Math.sqrt(3) * hexRadius;
@@ -318,9 +319,8 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Movimiento del Jugador orientado al Mouse de forma fluida
+    // 1. Movimiento del Jugador
     if (player.alive) {
-        // Calcular ángulo directo desde el centro de la pantalla hacia la posición del cursor
         let screenCenterX = canvas.width / 2;
         let screenCenterY = canvas.height / 2;
         let angle = Math.atan2(mouse.y - screenCenterY, mouse.x - screenCenterX);
@@ -337,19 +337,14 @@ function gameLoop() {
         camera.update(player.x, player.y, player.radius);
     }
 
+    // 2. Renderizado con transformación de Cámara Única
     ctx.save();
-    ctx.translate(-camera.x, -camera.y);
     ctx.scale(camera.zoom, camera.zoom);
-    // Nota: Para compensar el zoom en el translate de la cámara:
-    // Ajustamos la matriz multiplicando por zoom para mantener el centrado perfecto
-    ctx.restore();
-
-    ctx.save();
     ctx.translate(-camera.x, -camera.y);
 
     drawHexMap(ctx);
 
-    // 2. Comida Pequeña
+    // 3. Comida Pequeña
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -365,7 +360,7 @@ function gameLoop() {
         }
     }
 
-    // 3. Monedas Doradas
+    // 4. Monedas Doradas
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -381,7 +376,7 @@ function gameLoop() {
         }
     }
 
-    // 4. IA de los Bots
+    // 5. IA de los Bots
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -449,7 +444,7 @@ function gameLoop() {
             }
         }
 
-        // Colisiones
+        // Colisión: Bot choca contra Jugador -> Muere el Bot
         if (player.alive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
@@ -464,20 +459,24 @@ function gameLoop() {
             }
         }
 
-        if (player.alive && bot.alive) {
-            for (let segment of player.trail) {
+        // Colisión: Jugador choca contra Bot -> Muere el Jugador (salvo si está invulnerable al nacer)
+        if (player.alive && bot.alive && !player.invincible) {
+            for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
                     createGoldCoins(player.trail, player.score);
                     showFloatingMessage("¡Chocaste contra un rival y perdiste!", "#ef4444");
                     setTimeout(() => {
-                        player.x = WORLD_WIDTH / 2;
-                        player.y = WORLD_HEIGHT / 2;
+                        // Reaparición en posición segura con invulnerabilidad de 2s
+                        player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
+                        player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
                         player.radius = 18;
                         player.score = 0;
                         player.trail = [];
+                        player.invincible = true;
                         player.alive = true;
-                    }, 1000);
+                        setTimeout(() => { player.invincible = false; }, 2000);
+                    }, 1200);
                     break;
                 }
             }
@@ -489,7 +488,7 @@ function gameLoop() {
         }
     }
 
-    // 5. Dibujar Jugador Visible en Pantalla
+    // 6. Dibujar Jugador Visible
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
         drawOrganicBody(ctx, player.trail, player.radius, player.skin);
