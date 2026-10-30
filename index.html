@@ -7,6 +7,16 @@
     <link rel="stylesheet" href="style.css">
     <!-- SDK Oficial de Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .btn-danger {
+            background-color: #ef4444 !important;
+            color: #ffffff !important;
+            border: 1px solid #dc2626 !important;
+        }
+        .btn-danger:hover {
+            opacity: 0.9;
+        }
+    </style>
 </head>
 <body>
 
@@ -19,6 +29,7 @@
         <div class="hud-card">
             <button class="btn-action" onclick="openModal()">💳 Recargar ($2)</button>
             <button class="btn-action btn-gold" onclick="alert('Tienda de Bots')">🤖 Tienda Bot</button>
+            <button class="btn-action btn-danger" onclick="exitGame()">🚪 Salir</button>
         </div>
     </div>
 
@@ -84,6 +95,27 @@
             <button class="btn-action" style="width: 100%; padding: 12px; margin: 0;" onclick="submitPayment()">Enviar Comprobante</button>
         </div>
     </div>
+
+    <!-- Script de control de salida -->
+    <script>
+        function exitGame() {
+            // Detecta si hay una partida activa controlada en game.js (variable booleana isGameActive)
+            const isInGame = typeof isGameActive !== 'undefined' ? isGameActive : false;
+
+            if (isInGame) {
+                const confirmExit = confirm("⚠️ ¡Estás en plena partida! Si sales ahora, perderás la inversión de tu entrada actual ($2.00 USD). ¿Deseas salir?");
+                if (!confirmExit) return;
+                
+                // Si el usuario confirma, ejecutamos la función de pérdida/abandono si existe en game.js
+                if (typeof forfeitMatch === 'function') {
+                    forfeitMatch();
+                }
+            }
+
+            // Redirige al login
+            window.location.href = "login.html";
+        }
+    </script>
 
     <!-- Script principal del juego -->
     <script src="game.js"></script>
