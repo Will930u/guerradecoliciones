@@ -58,10 +58,10 @@ let player = {
     x: WORLD_WIDTH / 2,
     y: WORLD_HEIGHT / 2,
     radius: 18,
-    speed: 4.2,
+    speed: 4.2, // VELOCIDAD FIJA Y CONSTANTE (No disminuye al crecer)
     trail: [],
     alive: true,
-    score: 0, // Inicia en $0 USD reales
+    score: 0,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
     cashOutGoal: 100000
@@ -88,7 +88,7 @@ function showFloatingMessage(text, color = "#10b981") {
     }, 3000);
 }
 
-// Comida pequeña normal (Pepitas Neón - NO DAN DINERO, SOLO CRECIMIENTO MÍNIMO)
+// Comida pequeña normal (Pepitas Neón)
 let foodPellets = [];
 for (let i = 0; i < 450; i++) {
     spawnPellet();
@@ -103,7 +103,7 @@ function spawnPellet() {
     });
 }
 
-// Monedas doradas grandes (Botín de gusanos caídos - SÍ SUMAN SALDO Y TAMAÑO)
+// Monedas doradas grandes (Botín)
 let goldCoins = [];
 
 function createGoldCoins(trail, totalScore) {
@@ -150,7 +150,7 @@ function spawnBorderBot(name, skin) {
         x: sx,
         y: sy,
         radius: 18,
-        speed: 2.8 + Math.random() * 0.6,
+        speed: 3.2, // Velocidad constante para los bots también
         angle: sAngle,
         changeTimer: 0,
         trail: [],
@@ -317,7 +317,7 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Movimiento del Jugador
+    // 1. Movimiento del Jugador (Velocidad constante garantizada)
     if (player.alive) {
         let worldMouseX = mouse.x / camera.zoom + camera.x;
         let worldMouseY = mouse.y / camera.zoom + camera.y;
@@ -346,7 +346,7 @@ function gameLoop() {
 
     drawHexMap(ctx);
 
-    // 2. Comida Pequeña (SOLO AUMENTA TAMAÑO, NO SUMA SALDO EN USD)
+    // 2. Comida Pequeña (Crecimiento mínimo sin sumar dinero)
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -356,13 +356,13 @@ function gameLoop() {
         ctx.shadowBlur = 0;
 
         if (player.alive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
-            player.radius += 0.03; // Crecimiento físico mínimo
+            player.radius += 0.03;
             foodPellets.splice(i, 1);
             spawnPellet();
         }
     }
 
-    // 3. Monedas Doradas (AUMENTAN SALDO REAL EN USD Y TAMAÑO)
+    // 3. Monedas Doradas (Suman Saldo USD y Tamaño)
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -372,8 +372,8 @@ function gameLoop() {
         ctx.shadowBlur = 0;
 
         if (player.alive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
-            player.score += coin.value; // ¡Aquí sí suma saldo en USD!
-            player.radius += 0.25;      // Crecimiento de masa significativo
+            player.score += coin.value;
+            player.radius += 0.25;
             goldCoins.splice(i, 1);
         }
     }
@@ -451,7 +451,6 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > Math.floor(bot.radius * 2.8)) bot.trail.shift();
 
-        // Recolección de comida por los Bots (Solo aumenta tamaño)
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             let p = foodPellets[i];
             if (Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
@@ -461,7 +460,6 @@ function gameLoop() {
             }
         }
 
-        // Recolección de monedas por los Bots (Suma saldo y tamaño)
         for (let i = goldCoins.length - 1; i >= 0; i--) {
             let coin = goldCoins[i];
             if (Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
@@ -471,7 +469,6 @@ function gameLoop() {
             }
         }
 
-        // Colisiones
         if (player.alive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
@@ -487,7 +484,7 @@ function gameLoop() {
         }
 
         if (player.alive && bot.alive) {
-            for (let segment of bot.trail) {
+            for (let segment of player.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
                     createGoldCoins(player.trail, player.score);
