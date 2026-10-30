@@ -49,8 +49,9 @@ let camera = {
         this.targetZoom = Math.max(0.4, 1.0 - (playerRadius - 18) * 0.008);
         this.zoom += (this.targetZoom - this.zoom) * 0.05;
 
-        this.x = targetX - (canvas.width / 2) / this.zoom;
-        this.y = targetY - (canvas.height / 2) / this.zoom;
+        // Centrar perfectamente la cámara en el objetivo
+        this.x = targetX - canvas.width / (2 * this.zoom);
+        this.y = targetY - canvas.height / (2 * this.zoom);
     }
 };
 
@@ -58,7 +59,7 @@ let player = {
     x: WORLD_WIDTH / 2,
     y: WORLD_HEIGHT / 2,
     radius: 18,
-    speed: 4.2, // VELOCIDAD FIJA Y CONSTANTE (No disminuye al crecer)
+    speed: 4.2,
     trail: [],
     alive: true,
     score: 0,
@@ -150,7 +151,7 @@ function spawnBorderBot(name, skin) {
         x: sx,
         y: sy,
         radius: 18,
-        speed: 3.2, // Velocidad constante para los bots también
+        speed: 3.2,
         angle: sAngle,
         changeTimer: 0,
         trail: [],
@@ -317,19 +318,15 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Movimiento del Jugador (Velocidad constante garantizada)
+    // 1. Movimiento del Jugador orientado al Mouse de forma fluida
     if (player.alive) {
-        let worldMouseX = mouse.x / camera.zoom + camera.x;
-        let worldMouseY = mouse.y / camera.zoom + camera.y;
+        // Calcular ángulo directo desde el centro de la pantalla hacia la posición del cursor
+        let screenCenterX = canvas.width / 2;
+        let screenCenterY = canvas.height / 2;
+        let angle = Math.atan2(mouse.y - screenCenterY, mouse.x - screenCenterX);
 
-        let cx = worldMouseX - player.x;
-        let cy = worldMouseY - player.y;
-        let angle = Math.atan2(cy, cx);
-
-        if (Math.hypot(cx, cy) > 3) {
-            player.x += Math.cos(angle) * player.speed;
-            player.y += Math.sin(angle) * player.speed;
-        }
+        player.x += Math.cos(angle) * player.speed;
+        player.y += Math.sin(angle) * player.speed;
 
         player.x = Math.max(30, Math.min(WORLD_WIDTH - 30, player.x));
         player.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, player.y));
@@ -341,12 +338,18 @@ function gameLoop() {
     }
 
     ctx.save();
-    ctx.translate(-camera.x * camera.zoom, -camera.y * camera.zoom);
+    ctx.translate(-camera.x, -camera.y);
     ctx.scale(camera.zoom, camera.zoom);
+    // Nota: Para compensar el zoom en el translate de la cámara:
+    // Ajustamos la matriz multiplicando por zoom para mantener el centrado perfecto
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
 
     drawHexMap(ctx);
 
-    // 2. Comida Pequeña (Crecimiento mínimo sin sumar dinero)
+    // 2. Comida Pequeña
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -362,7 +365,7 @@ function gameLoop() {
         }
     }
 
-    // 3. Monedas Doradas (Suman Saldo USD y Tamaño)
+    // 3. Monedas Doradas
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -392,8 +395,8 @@ function gameLoop() {
             let dPlayer = Math.hypot(bot.x - player.x, bot.y - player.y);
             if (dPlayer < 500) {
                 closestDist = dPlayer;
-                targetX = player.x + (Math.cos(player.trail.length > 0 ? player.trail[player.trail.length-1].angle : 0) * 80);
-                targetY = player.y + (Math.sin(player.trail.length > 0 ? player.trail[player.trail.length-1].angle : 0) * 80);
+                targetX = player.x;
+                targetY = player.y;
             }
         }
 
@@ -408,18 +411,6 @@ function gameLoop() {
             }
         }
 
-        if (!targetX) {
-            for (let i = 0; i < foodPellets.length; i += 8) {
-                let p = foodPellets[i];
-                let dFood = Math.hypot(bot.x - p.x, bot.y - p.y);
-                if (dFood < 200 && dFood < closestDist) {
-                    closestDist = dFood;
-                    targetX = p.x;
-                    targetY = p.y;
-                }
-            }
-        }
-
         if (targetX !== null && targetY !== null) {
             targetAngle = Math.atan2(targetY - bot.y, targetX - bot.x);
         } else {
@@ -427,17 +418,6 @@ function gameLoop() {
             if (bot.changeTimer > 50) {
                 targetAngle += (Math.random() - 0.5) * 1.5;
                 bot.changeTimer = 0;
-            }
-        }
-
-        let dangerDetected = false;
-        if (player.alive) {
-            for (let seg of player.trail) {
-                if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + 30) {
-                    targetAngle += Math.PI * 0.6;
-                    dangerDetected = true;
-                    break;
-                }
             }
         }
 
@@ -469,11 +449,12 @@ function gameLoop() {
             }
         }
 
+        // Colisiones
         if (player.alive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
                     createGoldCoins(bot.trail, bot.score);
-                    showFloatingMessage(`¡Eliminaste a ${bot.name}! Dejó botín en oro.`, "#10b981");
+                    showFloatingMessage(`¡Eliminaste a ${bot.name}!`, "#10b981");
                     let deadName = bot.name;
                     let deadSkin = bot.skin;
                     bots.splice(bIndex, 1);
@@ -508,7 +489,7 @@ function gameLoop() {
         }
     }
 
-    // 5. Dibujar Jugador
+    // 5. Dibujar Jugador Visible en Pantalla
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
         drawOrganicBody(ctx, player.trail, player.radius, player.skin);
