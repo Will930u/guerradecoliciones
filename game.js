@@ -39,17 +39,16 @@ const skinCatalog = {
 
 const skinKeys = Object.keys(skinCatalog);
 
-// Cámara centrada en el jugador
+// Cámara con Zoom Dinámico Suave
 let camera = {
     x: 0,
     y: 0,
     zoom: 1.0,
     targetZoom: 1.0,
     update(targetX, targetY, playerRadius) {
-        this.targetZoom = Math.max(0.5, 1.0 - (playerRadius - 18) * 0.005);
+        this.targetZoom = Math.max(0.35, 1.0 - (playerRadius - 18) * 0.006);
         this.zoom += (this.targetZoom - this.zoom) * 0.05;
 
-        // Centrar perfectamente la cámara en la posición global del jugador
         this.x = targetX - (canvas.width / 2) / this.zoom;
         this.y = targetY - (canvas.height / 2) / this.zoom;
     }
@@ -59,7 +58,7 @@ let player = {
     x: WORLD_WIDTH / 2,
     y: WORLD_HEIGHT / 2,
     radius: 18,
-    speed: 4.2, // Velocidad constante
+    speed: 4.2,
     trail: [],
     alive: true,
     score: 0,
@@ -92,7 +91,7 @@ function showFloatingMessage(text, color = "#10b981") {
 
 // Comida pequeña (Pepitas Neón)
 let foodPellets = [];
-for (let i = 0; i < 450; i++) {
+for (let i = 0; i < 400; i++) {
     spawnPellet();
 }
 
@@ -105,14 +104,14 @@ function spawnPellet() {
     });
 }
 
-// Monedas doradas grandes (Botín)
+// Monedas doradas (Botín)
 let goldCoins = [];
 
 function createGoldCoins(trail, totalScore) {
-    let coinsCount = Math.max(5, Math.floor(trail.length / 2));
+    let coinsCount = Math.max(5, Math.floor(trail.length / 3));
     let valuePerCoin = Math.max(10, Math.floor(totalScore / coinsCount));
 
-    for (let i = 0; i < trail.length; i += 2) {
+    for (let i = 0; i < trail.length; i += 3) {
         goldCoins.push({
             x: trail[i].x + (Math.random() - 0.5) * 20,
             y: trail[i].y + (Math.random() - 0.5) * 20,
@@ -192,14 +191,14 @@ function attemptCashOut() {
     }
 }
 
-// Dibujo de Malla Hexagonal Oscura
+// Dibujo de Malla Hexagonal optimizado
 function drawHexMap(ctx) {
     const hexRadius = 45;
     const hexWidth = Math.sqrt(3) * hexRadius;
     const hexHeight = 2 * hexRadius;
 
     ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 2.0;
     ctx.fillStyle = "#070c16";
 
     let startX = Math.floor(camera.x / hexWidth) * hexWidth - hexWidth;
@@ -227,18 +226,16 @@ function drawHexMap(ctx) {
     }
 }
 
-// Renderizador de Gusano Orgánico
+// Renderizador de Gusano Orgánico Optimizado (Sin Lag al crecer)
 function drawOrganicBody(ctx, trail, radius, skin) {
-    for (let i = trail.length - 1; i >= 0; i--) {
+    for (let i = trail.length - 1; i >= 0; i -= 2) { // Dibujar cada 2 segmentos para aligerar la carga gráfica
         let p = trail[i];
         let segmentRadius = radius * (0.5 + 0.5 * (i / trail.length));
 
         ctx.save();
         ctx.translate(p.x, p.y);
 
-        ctx.shadowColor = skin.primaryColor;
-        ctx.shadowBlur = 8;
-
+        // Renderizado rápido sin sombras pesadas en cada anillo trasero
         ctx.fillStyle = skin.secondaryColor;
         ctx.beginPath();
         ctx.arc(0, 0, segmentRadius, 0, Math.PI * 2);
@@ -247,12 +244,6 @@ function drawOrganicBody(ctx, trail, radius, skin) {
         ctx.fillStyle = skin.primaryColor;
         ctx.beginPath();
         ctx.arc(0, 0, segmentRadius * 0.8, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
-        ctx.beginPath();
-        ctx.arc(-segmentRadius * 0.25, -segmentRadius * 0.25, segmentRadius * 0.3, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
@@ -266,7 +257,7 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.rotate(angle);
 
     ctx.shadowColor = skin.primaryColor;
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 10;
 
     ctx.fillStyle = skin.primaryColor;
     ctx.beginPath();
@@ -296,15 +287,12 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
     ctx.strokeStyle = "#10b981";
     ctx.lineWidth = 2;
-    ctx.shadowColor = "#10b981";
-    ctx.shadowBlur = 8;
 
     ctx.beginPath();
     ctx.roundRect(x - textWidth / 2 - 12, y - radius - 34, textWidth + 24, 24, 8);
     ctx.fill();
     ctx.stroke();
 
-    ctx.shadowBlur = 0;
     ctx.fillStyle = "#10b981";
     ctx.textAlign = "center";
     ctx.fillText(labelText, x, y - radius - 18);
@@ -332,12 +320,15 @@ function gameLoop() {
         player.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, player.y));
 
         player.trail.push({ x: player.x, y: player.y, angle: angle });
-        if (player.trail.length > Math.floor(player.radius * 2.8)) player.trail.shift();
+        
+        // LÍMITE MÁXIMO DE LONGITUD (Evita acumulación infinita de memoria y lag)
+        let maxTrailLength = Math.min(350, Math.floor(player.radius * 3.5));
+        if (player.trail.length > maxTrailLength) player.trail.shift();
 
         camera.update(player.x, player.y, player.radius);
     }
 
-    // 2. Renderizado con transformación de Cámara Única
+    // 2. Renderizado con Cámara Única
     ctx.save();
     ctx.scale(camera.zoom, camera.zoom);
     ctx.translate(-camera.x, -camera.y);
@@ -348,13 +339,10 @@ function gameLoop() {
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 8;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
-        ctx.shadowBlur = 0;
 
         if (player.alive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
-            player.radius += 0.03;
+            player.radius += 0.02;
             foodPellets.splice(i, 1);
             spawnPellet();
         }
@@ -364,14 +352,11 @@ function gameLoop() {
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
-        ctx.shadowColor = '#eab308';
-        ctx.shadowBlur = 12;
         ctx.beginPath(); ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2); ctx.fill();
-        ctx.shadowBlur = 0;
 
         if (player.alive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
             player.score += coin.value;
-            player.radius += 0.25;
+            player.radius += 0.2;
             goldCoins.splice(i, 1);
         }
     }
@@ -424,7 +409,8 @@ function gameLoop() {
         if (bot.y < 50 || bot.y > WORLD_HEIGHT - 50) bot.angle = -bot.angle;
 
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
-        if (bot.trail.length > Math.floor(bot.radius * 2.8)) bot.trail.shift();
+        let botMaxTrail = Math.min(300, Math.floor(bot.radius * 3.5));
+        if (bot.trail.length > botMaxTrail) bot.trail.shift();
 
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             let p = foodPellets[i];
@@ -459,7 +445,7 @@ function gameLoop() {
             }
         }
 
-        // Colisión: Jugador choca contra Bot -> Muere el Jugador (salvo si está invulnerable al nacer)
+        // Colisión: Jugador choca contra Bot -> Muere el Jugador
         if (player.alive && bot.alive && !player.invincible) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
@@ -467,7 +453,6 @@ function gameLoop() {
                     createGoldCoins(player.trail, player.score);
                     showFloatingMessage("¡Chocaste contra un rival y perdiste!", "#ef4444");
                     setTimeout(() => {
-                        // Reaparición en posición segura con invulnerabilidad de 2s
                         player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
                         player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
                         player.radius = 18;
@@ -488,7 +473,7 @@ function gameLoop() {
         }
     }
 
-    // 6. Dibujar Jugador Visible
+    // 6. Dibujar Jugador
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
         drawOrganicBody(ctx, player.trail, player.radius, player.skin);
