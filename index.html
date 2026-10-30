@@ -33,13 +33,13 @@
         </div>
     </div>
 
-    <!-- Barra Superior de Cash Out Dinámico -->
+    <!-- Barra Superior de Cash Out Dinámico (Botón inicialmente desactivado) -->
     <div id="cashOutHUD">
         <span style="font-size: 0.85rem; font-weight: bold; color: #eab308;">Cash Out</span>
         <div class="cash-bar-container">
             <div class="cash-bar-fill" id="cashBarFill"></div>
         </div>
-        <button class="btn-cashout" onclick="attemptCashOut()">Retirar</button>
+        <button class="btn-cashout" id="cashOutBtn" onclick="attemptCashOut()" disabled style="opacity: 0.5; cursor: not-allowed; background: #64748b; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; font-weight: bold;">Retirar</button>
     </div>
 
     <!-- Panel Lateral de Selección de Skins (Galería) -->
@@ -77,7 +77,7 @@
     <div class="modal-overlay" id="depositModal">
         <div class="modal-box">
             <div class="modal-header">
-                <span>Recargar Entrada ($2.00)</span>
+                <span id="modalTitle">Recargar Entrada ($2.00)</span>
                 <span class="close-btn" onclick="closeModal()">&times;</span>
             </div>
             <div class="modal-body" id="modalBodyContent">
