@@ -16,7 +16,7 @@ let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 // ==========================================
 // CONFIGURACIÓN DE BACKEND Y SUPABASE
 // ==========================================
-const BACKEND_URL = "https://tu-app-en-render.onrender.com"; // Reemplaza con la URL real de tu servicio en Render
+const BACKEND_URL = "https://guerradecoliciones.onrender.com"; // Reemplaza con la URL real de tu servicio en Render
 let currentUserId = "00000000-0000-0000-0000-000000000000"; // ID provisional (reemplazar con supabase.auth.getUser() al implementar Auth)
 
 // 1. Obtener la Tasa BCV desde la API oficial y mostrarla en la interfaz del juego
