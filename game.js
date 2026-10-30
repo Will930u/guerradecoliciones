@@ -31,7 +31,6 @@ async function initSupabase() {
         if (config.supabase_url && config.supabase_anon_key && window.supabase) {
             supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
             
-            // Obtener el ID real de la sesión de Supabase si está disponible
             const { data: sessionData } = await supabaseClient.auth.getSession();
             if (sessionData && sessionData.session && sessionData.session.user) {
                 currentUserId = sessionData.session.user.id;
@@ -88,7 +87,7 @@ setTimeout(syncUserWallet, 1500);
 function startWaitingForApproval() {
     showFloatingMessage("⏳ Pago reportado. Esperando aprobación en Telegram...", "#eab308");
     
-    let modalBody = document.querySelector('.modal-body');
+    let modalBody = document.getElementById('modalBodyContent');
     if (modalBody) {
         modalBody.innerHTML = `
             <div style="text-align: center; padding: 20px;">
@@ -105,38 +104,34 @@ function startWaitingForApproval() {
         if (!supabaseClient || !currentUserId) return;
 
         try {
-            const { data: wallet, error } = await supabaseClient
+            const { data: wallet } = await supabaseClient
                 .from('user_wallets')
                 .select('balance_usd')
                 .eq('user_id', currentUserId)
                 .single();
 
             if (wallet && parseFloat(wallet.balance_usd) >= ENTRY_FEE) {
-                // Detener el sondeo automático
                 clearInterval(verificationInterval);
                 verificationInterval = null;
 
                 showFloatingMessage("¡Pago aprobado! Entrando a la arena...", "#10b981");
                 closeModal();
 
-                // Descontar automáticamente la entrada de $2.00 USD
                 let newBalance = parseFloat(wallet.balance_usd) - ENTRY_FEE;
                 await supabaseClient
                     .from('user_wallets')
                     .update({ balance_usd: newBalance })
                     .eq('user_id', currentUserId);
 
-                // Actualizar saldo visual en el HUD
                 let balElem = document.getElementById('userBalance');
                 if (balElem) balElem.innerText = `$${newBalance.toFixed(2)} USD`;
 
-                // ¡Iniciar el juego automáticamente!
                 startArenaGame();
             }
         } catch (e) {
             console.error("Error en la verificación automática:", e);
         }
-    }, 3000); // Consulta Supabase cada 3 segundos
+    }, 3000);
 }
 
 // 3. INICIO DE LA ARENA
@@ -187,8 +182,6 @@ async function submitPayment() {
         if (response.ok && result.success) {
             showFloatingMessage("¡Pago reportado con éxito!", "#10b981");
             if (refInput) refInput.value = "";
-            
-            // Iniciar la escucha automática de aprobación
             startWaitingForApproval();
         } else {
             showFloatingMessage(result.error || "Error al registrar el pago.", "#ef4444");
@@ -327,9 +320,27 @@ window.addEventListener('mousemove', (e) => {
     mouse.y = e.clientY;
 });
 
+// Función para abrir el modal restaurando siempre el formulario limpio
 function openModal() {
+    let modalBody = document.getElementById('modalBodyContent');
+    if (modalBody) {
+        modalBody.innerHTML = `
+            <p>Costo de entrada a la partida: <strong>$2.00 USD</strong></p>
+            <div class="payment-info" style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px; margin-top: 8px; font-size: 0.85rem; color: #94a3b8;">
+                • Banco: Banesco (0134)<br>
+                • Teléfono: 0412-1234567<br>
+                • C.I.: V-12.345.678
+            </div>
+            <div style="margin-top: 15px;">
+                <label style="font-size: 0.85rem; color: #94a3b8;">Número de Referencia:</label>
+                <input type="text" id="refInput" class="form-control" placeholder="Ej: 123456" style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px; margin-top: 5px;">
+            </div>
+            <button class="btn-action" style="width: 100%; padding: 12px; margin-top: 15px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;" onclick="submitPayment()">Enviar Comprobante</button>
+        `;
+    }
     document.getElementById('depositModal').style.display = 'flex';
 }
+
 function closeModal() {
     document.getElementById('depositModal').style.display = 'none';
 }
@@ -541,19 +552,21 @@ function gameLoop() {
                     player.alive = false;
                     isGameActive = false;
                     createGoldCoinsFromCollision(player.trail);
-                    showFloatingMessage("¡Colisión! Perdiste tu entrada y soltaste monedas en la arena.", "#ef4444");
+                    showFloatingMessage("💥 ¡Colisión! Perdiste tu entrada y soltaste monedas en la arena.", "#ef4444");
                     
+                    // Devolver al menú principal / galería de skins de forma limpia
+                    let gallery = document.getElementById('skinGallery');
+                    if (gallery) gallery.style.display = 'block';
+
                     setTimeout(() => {
-                        player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
-                        player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
+                        player.x = WORLD_WIDTH / 2;
+                        player.y = WORLD_HEIGHT / 2;
                         player.radius = 18;
                         player.maxSegments = 30;
                         player.score = 0;
                         player.trail = [];
-                        player.invincible = true;
                         player.alive = true;
-                        setTimeout(() => { player.invincible = false; }, 2000);
-                    }, 1200);
+                    }, 1500);
                     break;
                 }
             }
@@ -565,7 +578,7 @@ function gameLoop() {
         }
     }
 
-    if (player.alive) {
+    if (player.alive && isGameActive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
         drawOrganicBody(ctx, player.trail, player.radius, player.skin);
         drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score);
