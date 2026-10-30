@@ -1,0 +1,83 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viper Royale - Panel de Administración</title>
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+    <div class="admin-container">
+        <!-- Barra Lateral / Menú -->
+        <aside class="admin-sidebar">
+            <h2>Viper Admin</h2>
+            <ul>
+                <li class="active">📊 Panel Principal</li>
+                <li>💳 Validar Pagos Móviles</li>
+                <li>💵 Solicitudes de Retiro</li>
+                <li>🌐 Tasa BCV Oficial</li>
+            </ul>
+        </aside>
+
+        <!-- Contenido Principal -->
+        <main class="admin-content">
+            <header class="admin-header">
+                <h1>Control de Operaciones y Economía</h1>
+                <div class="bcv-widget">
+                    <span>Tasa BCV Actual: <strong id="adminBcvRate">Cargando...</strong> VES</span>
+                    <button class="btn-refresh" onclick="fetchBcvRate()">Actualizar API</button>
+                </div>
+            </header>
+
+            <!-- Tarjetas de Estadísticas -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Recargas Pendientes</h3>
+                    <p id="pendingPaymentsCount">3</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Retiros Solicitados</h3>
+                    <p id="pendingWithdrawalsCount">1</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Jugadores en Línea</h3>
+                    <p>21 (20 Bots + 1 Tú)</p>
+                </div>
+            </div>
+
+            <!-- Tabla de Validación de Pagos Móviles -->
+            <section class="admin-section">
+                <h2>Comprobantes de Pago Móvil ($2.00 USD)</h2>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Referencia</th>
+                                <th>Banco</th>
+                                <th>Monto VES</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentsTableBody">
+                            <tr>
+                                <td>Tú (Jugador)</td>
+                                <td>#849201</td>
+                                <td>Banesco</td>
+                                <td>Bs. 75.500,00</td>
+                                <td>
+                                    <button class="btn-approve" onclick="approvePayment(this)">Aprobar</button>
+                                    <button class="btn-reject" onclick="rejectPayment(this)">Rechazar</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
