@@ -73,14 +73,14 @@
     <!-- Canvas de la Arena de Juego -->
     <canvas id="gameCanvas"></canvas>
 
-    <!-- Ventana Flotante / Modal de Pago Móvil -->
+    <!-- Ventana Flotante / Modal de Pago Móvil con contenedor dinámico -->
     <div class="modal-overlay" id="depositModal">
         <div class="modal-box">
             <div class="modal-header">
                 <span>Recargar Entrada ($2.00)</span>
                 <span class="close-btn" onclick="closeModal()">&times;</span>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" id="modalBodyContent">
                 <p>Costo de entrada a la partida: <strong>$2.00 USD</strong></p>
                 <div class="payment-info">
                     • Banco: Banesco (0134)<br>
@@ -91,28 +91,22 @@
                     <label style="font-size: 0.85rem; color: #94a3b8;">Número de Referencia:</label>
                     <input type="text" id="refInput" class="form-control" placeholder="Ej: 123456">
                 </div>
+                <button class="btn-action" style="width: 100%; padding: 12px; margin-top: 15px;" onclick="submitPayment()">Enviar Comprobante</button>
             </div>
-            <button class="btn-action" style="width: 100%; padding: 12px; margin: 0;" onclick="submitPayment()">Enviar Comprobante</button>
         </div>
     </div>
 
     <!-- Script de control de salida -->
     <script>
         function exitGame() {
-            // Detecta si hay una partida activa controlada en game.js (variable booleana isGameActive)
             const isInGame = typeof isGameActive !== 'undefined' ? isGameActive : false;
-
             if (isInGame) {
                 const confirmExit = confirm("⚠️ ¡Estás en plena partida! Si sales ahora, perderás la inversión de tu entrada actual ($2.00 USD). ¿Deseas salir?");
                 if (!confirmExit) return;
-                
-                // Si el usuario confirma, ejecutamos la función de pérdida/abandono si existe en game.js
                 if (typeof forfeitMatch === 'function') {
                     forfeitMatch();
                 }
             }
-
-            // Redirige al login
             window.location.href = "login.html";
         }
     </script>
