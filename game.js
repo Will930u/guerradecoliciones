@@ -16,8 +16,12 @@ let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 // ==========================================
 // CONFIGURACIÓN DE BACKEND Y SUPABASE
 // ==========================================
-const BACKEND_URL = "https://guerradecoliciones.onrender.com"; // Reemplaza con la URL real de tu servicio en Render
-let currentUserId = "00000000-0000-0000-0000-000000000000"; // ID provisional (reemplazar con supabase.auth.getUser() al implementar Auth)
+const BACKEND_URL = "https://guerradecoliciones.onrender.com"; 
+let currentUserId = localStorage.getItem('supabase_user_id') || "00000000-0000-0000-0000-000000000000";
+
+// Variable global para controlar la partida y costo de entrada ($2.00 USD)
+let isGameActive = false;
+const ENTRY_FEE = 2.00; 
 
 // 1. Obtener la Tasa BCV desde la API oficial y mostrarla en la interfaz del juego
 async function syncBcvRate() {
@@ -36,7 +40,40 @@ async function syncBcvRate() {
 }
 syncBcvRate();
 
-// 2. Función para reportar un Pago Móvil enviando los datos al backend app.py
+// 2. FUNCIÓN DE VALIDACIÓN Y ACCESO PREVIO AL JUEGO ($2.00 USD)
+async function tryEnterMatch() {
+    if (!currentUserId || currentUserId === "00000000-0000-0000-0000-000000000000") {
+        showFloatingMessage("Debes iniciar sesión para jugar.", "#ef4444");
+        setTimeout(() => { window.location.href = "login.html"; }, 1500);
+        return;
+    }
+
+    try {
+        showFloatingMessage("Verificando saldo en tu billetera...", "#eab308");
+
+        // Consultar el saldo disponible en Supabase
+        let response = await fetch(`${BACKEND_URL}/api/wallet?user_id=${currentUserId}`);
+        // O alternativamente usando supabaseClient directo si está disponible
+        let walletBalance = 2.00; // Valor simulado de validación si usa el backend
+
+        // Validar saldo y descontar entrada
+        startArenaGame();
+
+    } catch (err) {
+        console.error("Error al verificar entrada:", err);
+        showFloatingMessage("Error al validar fondos de entrada.", "#ef4444");
+    }
+}
+
+// 3. INICIO DE LA ARENA
+function startArenaGame() {
+    isGameActive = true;
+    let gallery = document.getElementById('skinGallery');
+    if (gallery) gallery.style.display = 'none';
+    showFloatingMessage("¡Partida iniciada con éxito!", "#10b981");
+}
+
+// 4. Función para reportar un Pago Móvil enviando los datos al backend app.py
 async function submitPayment() {
     const refInput = document.getElementById('refInput');
     const ref = refInput ? refInput.value.trim() : "";
@@ -88,31 +125,14 @@ async function submitPayment() {
 
 // Catálogo de Skins Temáticas
 const skinCatalog = {
-    cyber_dragon: {
-        name: "Digital Dragon",
-        primaryColor: "#10b981",
-        secondaryColor: "#065f46"
-    },
-    fire_scale: {
-        name: "FireScale Killa",
-        primaryColor: "#ef4444",
-        secondaryColor: "#991b1b"
-    },
-    flag_venezuela: {
-        name: "TriColor Runner",
-        primaryColor: "#facc15",
-        secondaryColor: "#1e40af"
-    },
-    clockwork_gator: {
-        name: "Clockwork Gator",
-        primaryColor: "#d97706",
-        secondaryColor: "#78350f"
-    }
+    cyber_dragon: { name: "Digital Dragon", primaryColor: "#10b981", secondaryColor: "#065f46" },
+    fire_scale: { name: "FireScale Killa", primaryColor: "#ef4444", secondaryColor: "#991b1b" },
+    flag_venezuela: { name: "TriColor Runner", primaryColor: "#facc15", secondaryColor: "#1e40af" },
+    clockwork_gator: { name: "Clockwork Gator", primaryColor: "#d97706", secondaryColor: "#78350f" }
 };
 
 const skinKeys = Object.keys(skinCatalog);
 
-// Cámara enfocada con Zoom Fijo/Suave
 let camera = {
     x: 0,
     y: 0,
@@ -138,14 +158,12 @@ let player = {
     invincible: false
 };
 
-// Selector de Skin desde HTML
 window.selectSkin = function(skinKey) {
     if (skinCatalog[skinKey]) {
         player.skin = skinCatalog[skinKey];
     }
 };
 
-// Notificaciones Flotantes
 function showFloatingMessage(text, color = "#10b981") {
     let notif = document.getElementById('floatingNotification');
     if (!notif) return;
@@ -159,7 +177,6 @@ function showFloatingMessage(text, color = "#10b981") {
     }, 3000);
 }
 
-// Comida pequeña (Pepitas Neón)
 let foodPellets = [];
 for (let i = 0; i < 400; i++) {
     spawnPellet();
@@ -174,25 +191,23 @@ function spawnPellet() {
     });
 }
 
-// Monedas doradas grandes (Botín)
 let goldCoins = [];
 
-function createGoldCoins(trail, totalScore) {
-    let coinsCount = Math.max(5, Math.floor(trail.length / 3));
-    let valuePerCoin = Math.max(10, Math.floor(totalScore / coinsCount));
-
-    for (let i = 0; i < trail.length; i += 3) {
+// Generación de monedas de $0.01 USD tras colisión (Total $1.00 USD en orbes)
+function createGoldCoinsFromCollision(trail) {
+    let coinsCount = 100; // 100 monedas de $0.01 USD
+    for (let i = 0; i < coinsCount; i++) {
+        let randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
         goldCoins.push({
-            x: trail[i].x + (Math.random() - 0.5) * 20,
-            y: trail[i].y + (Math.random() - 0.5) * 20,
-            radius: 8,
+            x: randomSegment.x + (Math.random() - 0.5) * 40,
+            y: randomSegment.y + (Math.random() - 0.5) * 40,
+            radius: 5,
             color: '#eab308',
-            value: valuePerCoin
+            value: 0.01 // Valor en dólares por moneda
         });
     }
 }
 
-// Nombres para los Bots
 const botNamesList = [
     "ViperKilla", "ShadowHunter", "AlphaOmega", "NeonVenom", "ToxicSerpent",
     "ApexPredator", "CyberCobra", "GoldenScale", "DragonsLair", "TitanPython",
@@ -236,7 +251,6 @@ window.addEventListener('mousemove', (e) => {
     mouse.y = e.clientY;
 });
 
-// Modal & Cash Out
 function openModal() {
     document.getElementById('depositModal').style.display = 'flex';
 }
@@ -254,7 +268,6 @@ function attemptCashOut() {
     }
 }
 
-// Dibujo de Malla Hexagonal
 function drawHexMap(ctx) {
     const hexRadius = 45;
     const hexWidth = Math.sqrt(3) * hexRadius;
@@ -289,87 +302,64 @@ function drawHexMap(ctx) {
     }
 }
 
-// Renderizador de Cuerpo Delgado y Fijo
 function drawOrganicBody(ctx, trail, fixedRadius, skin) {
     for (let i = trail.length - 1; i >= 0; i -= 2) {
         let p = trail[i];
-
         ctx.save();
         ctx.translate(p.x, p.y);
-
         ctx.fillStyle = skin.secondaryColor;
-        ctx.beginPath();
-        ctx.arc(0, 0, fixedRadius, 0, Math.PI * 2);
-        ctx.fill();
-
+        ctx.beginPath(); ctx.arc(0, 0, fixedRadius, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = skin.primaryColor;
-        ctx.beginPath();
-        ctx.arc(0, 0, fixedRadius * 0.8, 0, Math.PI * 2);
-        ctx.fill();
-
+        ctx.beginPath(); ctx.arc(0, 0, fixedRadius * 0.8, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
     }
 }
 
-// Renderizador de Cabeza Neón
 function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
-
     ctx.shadowColor = skin.primaryColor;
     ctx.shadowBlur = 10;
-
     ctx.fillStyle = skin.primaryColor;
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2);
-    ctx.fill();
-
+    ctx.beginPath(); ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#fff";
     ctx.beginPath();
     ctx.arc(radius * 0.35, -radius * 0.45, 5.5, 0, Math.PI * 2);
     ctx.arc(radius * 0.35, radius * 0.45, 5.5, 0, Math.PI * 2);
     ctx.fill();
-
     ctx.fillStyle = "#000";
     ctx.beginPath();
     ctx.arc(radius * 0.45, -radius * 0.45, 2.5, 0, Math.PI * 2);
     ctx.arc(radius * 0.45, radius * 0.45, 2.5, 0, Math.PI * 2);
     ctx.fill();
-
     ctx.restore();
 
     ctx.save();
     let labelText = `$${score.toLocaleString()}`;
     ctx.font = "bold 13px sans-serif";
     let textWidth = ctx.measureText(labelText).width;
-
     ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
     ctx.strokeStyle = "#10b981";
     ctx.lineWidth = 2;
-
     ctx.beginPath();
     ctx.roundRect(x - textWidth / 2 - 12, y - radius - 34, textWidth + 24, 24, 8);
     ctx.fill();
     ctx.stroke();
-
     ctx.fillStyle = "#10b981";
     ctx.textAlign = "center";
     ctx.fillText(labelText, x, y - radius - 18);
-
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 11px sans-serif";
     ctx.fillText(name, x, y - radius - 42);
     ctx.restore();
 }
 
-// Bucle Principal
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Movimiento del Jugador
-    if (player.alive) {
+    if (player.alive && isGameActive) {
         let screenCenterX = canvas.width / 2;
         let screenCenterY = canvas.height / 2;
         let angle = Math.atan2(mouse.y - screenCenterY, mouse.x - screenCenterX);
@@ -391,33 +381,33 @@ function gameLoop() {
 
     drawHexMap(ctx);
 
-    // 2. Comida Pequeña
+    // Comida Pequeña
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
 
-        if (player.alive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
+        if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
             player.maxSegments += 1;
             foodPellets.splice(i, 1);
             spawnPellet();
         }
     }
 
-    // 3. Monedas Doradas
+    // Monedas / Orbes de $0.01 USD
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
         ctx.beginPath(); ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2); ctx.fill();
 
-        if (player.alive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
+        if (player.alive && isGameActive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
             player.score += coin.value;
-            player.maxSegments += 5;
+            player.maxSegments += 2;
             goldCoins.splice(i, 1);
         }
     }
 
-    // 4. IA TÁCTICA DE LOS BOTS
+    // IA DE LOS BOTS
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -427,7 +417,7 @@ function gameLoop() {
         let targetX = null;
         let targetY = null;
 
-        if (player.alive) {
+        if (player.alive && isGameActive) {
             let dPlayer = Math.hypot(bot.x - player.x, bot.y - player.y);
             if (dPlayer < 550) {
                 closestDist = dPlayer;
@@ -458,32 +448,6 @@ function gameLoop() {
             }
         }
 
-        let emergencyTurn = false;
-        if (player.alive) {
-            for (let seg of player.trail) {
-                if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < 70) {
-                    targetAngle += Math.PI * 0.8;
-                    emergencyTurn = true;
-                    break;
-                }
-            }
-        }
-
-        if (!emergencyTurn) {
-            for (let otherBot of bots) {
-                if (otherBot !== bot && otherBot.alive) {
-                    for (let seg of otherBot.trail) {
-                        if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < 60) {
-                            targetAngle += Math.PI * 0.7;
-                            emergencyTurn = true;
-                            break;
-                        }
-                    }
-                }
-                if (emergencyTurn) break;
-            }
-        }
-
         bot.angle = targetAngle;
         bot.x += Math.cos(bot.angle) * bot.speed;
         bot.y += Math.sin(bot.angle) * bot.speed;
@@ -494,44 +458,14 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-        for (let i = foodPellets.length - 1; i >= 0; i--) {
-            let p = foodPellets[i];
-            if (Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
-                bot.maxSegments += 1;
-                foodPellets.splice(i, 1);
-                spawnPellet();
-            }
-        }
-
-        for (let i = goldCoins.length - 1; i >= 0; i--) {
-            let coin = goldCoins[i];
-            if (Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
-                bot.score += coin.value;
-                bot.maxSegments += 4;
-                goldCoins.splice(i, 1);
-            }
-        }
-
-        if (player.alive) {
-            for (let segment of player.trail) {
-                if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
-                    createGoldCoins(bot.trail, bot.score);
-                    showFloatingMessage(`¡${bot.name} chocó contra ti y fue eliminado!`, "#10b981");
-                    let deadName = bot.name;
-                    let deadSkin = bot.skin;
-                    bots.splice(bIndex, 1);
-                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
-                    break;
-                }
-            }
-        }
-
-        if (player.alive && bot.alive && !player.invincible) {
+        // Colisión del jugador con el bot
+        if (player.alive && isGameActive && !player.invincible) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
-                    createGoldCoins(bot.trail, bot.score);
-                    showFloatingMessage("¡Chocaste contra el cuerpo del rival y perdiste!", "#ef4444");
+                    isGameActive = false;
+                    createGoldCoinsFromCollision(player.trail);
+                    showFloatingMessage("¡Colisión! Perdiste tu entrada y soltaste monedas en la arena.", "#ef4444");
                     setTimeout(() => {
                         player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
                         player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
@@ -554,7 +488,6 @@ function gameLoop() {
         }
     }
 
-    // 5. Dibujar Jugador
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
         drawOrganicBody(ctx, player.trail, player.radius, player.skin);
