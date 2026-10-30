@@ -10,6 +10,7 @@ CORS(app)
 
 # Cargar de forma segura las variables de entorno configuradas en Render
 SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID")
@@ -40,6 +41,18 @@ def home():
       jsonify({
           "status": "Viper Royale Backend Activo y Conectado a Supabase 🚀",
           "ok": True,
+      }),
+      200,
+  )
+
+
+# Endpoint para entregar las variables de entorno públicas de Supabase al frontend
+@app.route("/api/config", methods=["GET"])
+def get_config():
+  return (
+      jsonify({
+          "supabase_url": SUPABASE_URL,
+          "supabase_anon_key": SUPABASE_ANON_KEY,
       }),
       200,
   )
