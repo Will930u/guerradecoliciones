@@ -1,5 +1,6 @@
 const BACKEND_URL = "https://guerradecoliciones.onrender.com";
 
+// Declaración única de la variable supabase
 let supabase = null;
 
 // Elementos de la interfaz
@@ -15,6 +16,7 @@ const linkResetPassword = document.getElementById('linkResetPassword');
 function showMessage(text, type = 'error') {
     authMessage.innerText = text;
     authMessage.className = `auth-message ${type}`;
+    authMessage.style.display = 'block';
 }
 
 // Alternar entre Vistas (Login <-> Registro)
@@ -94,7 +96,6 @@ registerForm.addEventListener('submit', async (e) => {
 
     showMessage("Registrando cuenta...", "success");
 
-    // Registro con Supabase enviando los datos adicionales en options.data
     const { data, error } = await supabase.auth.signUp({
         email: email,
         password: password,
