@@ -24,9 +24,9 @@ const ENTRY_FEE = 2.00;
 let verificationInterval = null;
 let cashOutCheckInterval = null;
 
-// Límite de crecimiento moderado (máximo 10 veces el tamaño inicial de 30)
+// Límite de crecimiento: El doble de lo limitado (20 veces el tamaño inicial de 30 = 600 segmentos)
 const INITIAL_SEGMENTS = 30;
-const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 10; // 300 segmentos máximo
+const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20; 
 
 let supabaseClient = null;
 async function initSupabase() {
@@ -258,7 +258,6 @@ async function attemptCashOut() {
     }
 }
 
-// Sondeo para detectar cuando el administrador aprueba el pago del retiro
 function startWaitingForCashOutApproval(amountUSD) {
     if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
 
@@ -271,15 +270,6 @@ function startWaitingForCashOutApproval(amountUSD) {
                 .select('total_earnings_usd')
                 .eq('user_id', currentUserId)
                 .single();
-
-            // Verificamos si la transacción fue completada por el administrador
-            // (Simulación de detección de estado pagado o actualización de ganancias)
-            // Una vez confirmado por el admin:
-            // clearInterval(cashOutCheckInterval);
-            // closeModal();
-            // showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado con éxito por el Admin! 🚀`, "#10b981");
-            // player.score = 0;
-            // player.maxSegments = INITIAL_SEGMENTS;
         } catch (e) {
             console.error("Error en sondeo de retiro:", e);
         }
@@ -318,7 +308,7 @@ let player = {
     score: 0,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
-    cashOutGoal: 100000,
+    cashOutGoal: 50.0, // Meta realista para que la barra avance y se llene correctamente
     invincible: false
 };
 
@@ -554,7 +544,7 @@ function gameLoop() {
 
     drawHexMap(ctx);
 
-    // Comida Pequeña (Con límite moderado de crecimiento)
+    // Comida Pequeña (Con límite duplicado de crecimiento: hasta 600 segmentos)
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -569,7 +559,7 @@ function gameLoop() {
         }
     }
 
-    // Monedas / Orbes de $0.01 USD (Con límite moderado de crecimiento)
+    // Monedas / Orbes de $0.01 USD (Con límite duplicado de crecimiento)
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -681,7 +671,7 @@ function gameLoop() {
 
     ctx.restore();
 
-    // Control dinámico de la barra y el botón de Cash Out
+    // Control dinámico de la barra y el botón de Cash Out corregido
     let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
     let barFill = document.getElementById('cashBarFill');
     if (barFill) barFill.style.width = progress + '%';
