@@ -39,16 +39,12 @@ const skinCatalog = {
 
 const skinKeys = Object.keys(skinCatalog);
 
-// Cámara con Zoom Dinámico Suave
+// Cámara enfocada con Zoom Fijo/Suave
 let camera = {
     x: 0,
     y: 0,
     zoom: 1.0,
-    targetZoom: 1.0,
-    update(targetX, targetY, playerRadius) {
-        this.targetZoom = Math.max(0.35, 1.0 - (playerRadius - 18) * 0.006);
-        this.zoom += (this.targetZoom - this.zoom) * 0.05;
-
+    update(targetX, targetY) {
         this.x = targetX - (canvas.width / 2) / this.zoom;
         this.y = targetY - (canvas.height / 2) / this.zoom;
     }
@@ -57,7 +53,8 @@ let camera = {
 let player = {
     x: WORLD_WIDTH / 2,
     y: WORLD_HEIGHT / 2,
-    radius: 18,
+    radius: 18, // GROSOR FIJO (No engruesa jamás)
+    maxSegments: 30, // La longitud inicial de la cola
     speed: 4.2,
     trail: [],
     alive: true,
@@ -104,7 +101,7 @@ function spawnPellet() {
     });
 }
 
-// Monedas doradas (Botín)
+// Monedas doradas grandes (Botín)
 let goldCoins = [];
 
 function createGoldCoins(trail, totalScore) {
@@ -150,7 +147,8 @@ function spawnBorderBot(name, skin) {
         skin: skin,
         x: sx,
         y: sy,
-        radius: 18,
+        radius: 18, // Grosor fijo para los bots
+        maxSegments: 30,
         speed: 3.2,
         angle: sAngle,
         changeTimer: 0,
@@ -185,13 +183,13 @@ function attemptCashOut() {
     if (player.score >= player.cashOutGoal) {
         showFloatingMessage(`¡Retirada exitosa! Cobrado $${(player.score * 0.1).toFixed(2)} USD.`, "#eab308");
         player.score = 0;
-        player.radius = 18;
+        player.maxSegments = 30;
     } else {
         showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
     }
 }
 
-// Dibujo de Malla Hexagonal optimizado
+// Dibujo de Malla Hexagonal
 function drawHexMap(ctx) {
     const hexRadius = 45;
     const hexWidth = Math.sqrt(3) * hexRadius;
@@ -202,9 +200,9 @@ function drawHexMap(ctx) {
     ctx.fillStyle = "#070c16";
 
     let startX = Math.floor(camera.x / hexWidth) * hexWidth - hexWidth;
-    let endX = startX + (canvas.width / camera.zoom) + hexWidth * 2;
+    let endX = startX + canvas.width + hexWidth * 2;
     let startY = Math.floor(camera.y / (hexHeight * 0.75)) * (hexHeight * 0.75) - hexHeight;
-    let endY = startY + (canvas.height / camera.zoom) + hexHeight * 2;
+    let endY = startY + canvas.height + hexHeight * 2;
 
     for (let y = startY; y < endY; y += hexHeight * 0.75) {
         let isOffset = Math.floor(y / (hexHeight * 0.75)) % 2 !== 0;
@@ -226,24 +224,22 @@ function drawHexMap(ctx) {
     }
 }
 
-// Renderizador de Gusano Orgánico Optimizado (Sin Lag al crecer)
-function drawOrganicBody(ctx, trail, radius, skin) {
-    for (let i = trail.length - 1; i >= 0; i -= 2) { // Dibujar cada 2 segmentos para aligerar la carga gráfica
+// Renderizador de Cuerpo con Grosor Fijo Constantemente Delgado
+function drawOrganicBody(ctx, trail, fixedRadius, skin) {
+    for (let i = trail.length - 1; i >= 0; i -= 2) {
         let p = trail[i];
-        let segmentRadius = radius * (0.5 + 0.5 * (i / trail.length));
 
         ctx.save();
         ctx.translate(p.x, p.y);
 
-        // Renderizado rápido sin sombras pesadas en cada anillo trasero
         ctx.fillStyle = skin.secondaryColor;
         ctx.beginPath();
-        ctx.arc(0, 0, segmentRadius, 0, Math.PI * 2);
+        ctx.arc(0, 0, fixedRadius, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = skin.primaryColor;
         ctx.beginPath();
-        ctx.arc(0, 0, segmentRadius * 0.8, 0, Math.PI * 2);
+        ctx.arc(0, 0, fixedRadius * 0.8, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
@@ -321,34 +317,33 @@ function gameLoop() {
 
         player.trail.push({ x: player.x, y: player.y, angle: angle });
         
-        // LÍMITE MÁXIMO DE LONGITUD (Evita acumulación infinita de memoria y lag)
-        let maxTrailLength = Math.min(350, Math.floor(player.radius * 3.5));
-        if (player.trail.length > maxTrailLength) player.trail.shift();
+        // El cuerpo SOLO aumenta en longitud de segmentos, NUNCA en grosor
+        if (player.trail.length > player.maxSegments) {
+            player.trail.shift();
+        }
 
-        camera.update(player.x, player.y, player.radius);
+        camera.update(player.x, player.y);
     }
 
-    // 2. Renderizado con Cámara Única
     ctx.save();
-    ctx.scale(camera.zoom, camera.zoom);
     ctx.translate(-camera.x, -camera.y);
 
     drawHexMap(ctx);
 
-    // 3. Comida Pequeña
+    // 2. Comida Pequeña (Agrega 1 segmento de cola)
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
 
         if (player.alive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
-            player.radius += 0.02;
+            player.maxSegments += 1; // Solo alarga la cola
             foodPellets.splice(i, 1);
             spawnPellet();
         }
     }
 
-    // 4. Monedas Doradas
+    // 3. Monedas Doradas (Suma Saldo USD y Alarga bastante la cola)
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -356,12 +351,12 @@ function gameLoop() {
 
         if (player.alive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
             player.score += coin.value;
-            player.radius += 0.2;
+            player.maxSegments += 5; // Alarga 5 segmentos por moneda
             goldCoins.splice(i, 1);
         }
     }
 
-    // 5. IA de los Bots
+    // 4. IA de los Bots
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -409,13 +404,12 @@ function gameLoop() {
         if (bot.y < 50 || bot.y > WORLD_HEIGHT - 50) bot.angle = -bot.angle;
 
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
-        let botMaxTrail = Math.min(300, Math.floor(bot.radius * 3.5));
-        if (bot.trail.length > botMaxTrail) bot.trail.shift();
+        if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             let p = foodPellets[i];
             if (Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
-                bot.radius += 0.02;
+                bot.maxSegments += 1;
                 foodPellets.splice(i, 1);
                 spawnPellet();
             }
@@ -425,7 +419,7 @@ function gameLoop() {
             let coin = goldCoins[i];
             if (Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
                 bot.score += coin.value;
-                bot.radius += 0.15;
+                bot.maxSegments += 4;
                 goldCoins.splice(i, 1);
             }
         }
@@ -456,6 +450,7 @@ function gameLoop() {
                         player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
                         player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
                         player.radius = 18;
+                        player.maxSegments = 30;
                         player.score = 0;
                         player.trail = [];
                         player.invincible = true;
@@ -473,7 +468,7 @@ function gameLoop() {
         }
     }
 
-    // 6. Dibujar Jugador
+    // 5. Dibujar Jugador
     if (player.alive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
         drawOrganicBody(ctx, player.trail, player.radius, player.skin);
