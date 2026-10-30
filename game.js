@@ -23,6 +23,21 @@ let currentUserId = localStorage.getItem('supabase_user_id') || "00000000-0000-0
 let isGameActive = false;
 const ENTRY_FEE = 2.00; 
 
+// Inicializar cliente de Supabase en el navegador si está disponible
+let supabaseClient = null;
+async function initSupabase() {
+    try {
+        let res = await fetch(`${BACKEND_URL}/api/config`);
+        let config = await res.json();
+        if (config.supabase_url && config.supabase_anon_key && window.supabase) {
+            supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
+        }
+    } catch (e) {
+        console.error("Error al inicializar cliente Supabase:", e);
+    }
+}
+initSupabase();
+
 // 1. Obtener la Tasa BCV desde la API oficial y mostrarla en la interfaz del juego
 async function syncBcvRate() {
     try {
@@ -40,7 +55,7 @@ async function syncBcvRate() {
 }
 syncBcvRate();
 
-// 2. FUNCIÓN DE VALIDACIÓN Y ACCESO PREVIO AL JUEGO ($2.00 USD)
+// 2. FUNCIÓN DE VALIDACIÓN Y ACCESO PREVIO AL JUEGO ($2.00 USD) - CONSULTA REAL A SUPABASE
 async function tryEnterMatch() {
     if (!currentUserId || currentUserId === "00000000-0000-0000-0000-000000000000") {
         showFloatingMessage("Debes iniciar sesión para jugar.", "#ef4444");
@@ -48,15 +63,56 @@ async function tryEnterMatch() {
         return;
     }
 
+    if (!supabaseClient) {
+        showFloatingMessage("Conectando con el servidor de base de datos...", "#eab308");
+        await initSupabase();
+        if (!supabaseClient) {
+            showFloatingMessage("Error crítico de conexión con Supabase.", "#ef4444");
+            return;
+        }
+    }
+
     try {
-        showFloatingMessage("Verificando saldo en tu billetera...", "#eab308");
+        showFloatingMessage("Verificando saldo aprobado en tu billetera...", "#eab308");
 
-        // Consultar el saldo disponible en Supabase
-        let response = await fetch(`${BACKEND_URL}/api/wallet?user_id=${currentUserId}`);
-        // O alternativamente usando supabaseClient directo si está disponible
-        let walletBalance = 2.00; // Valor simulado de validación si usa el backend
+        // Consultar directamente la tabla user_wallets en Supabase
+        const { data: wallet, error } = await supabaseClient
+            .from('user_wallets')
+            .select('balance_usd')
+            .eq('user_id', currentUserId)
+            .single();
 
-        // Validar saldo y descontar entrada
+        if (error || !wallet) {
+            showFloatingMessage("No se encontró tu billetera. Reporta tu pago primero.", "#ef4444");
+            openModal();
+            return;
+        }
+
+        let currentBalance = parseFloat(wallet.balance_usd || 0);
+
+        if (currentBalance < ENTRY_FEE) {
+            showFloatingMessage(`⚠️ Saldo insuficiente ($${currentBalance.toFixed(2)} USD). Necesitas $2.00 USD aprobados.`, "#ef4444");
+            openModal();
+            return;
+        }
+
+        // Descontar la entrada de $2.00 USD de la billetera en Supabase
+        let newBalance = currentBalance - ENTRY_FEE;
+        const { error: updateError } = await supabaseClient
+            .from('user_wallets')
+            .update({ balance_usd: newBalance })
+            .eq('user_id', currentUserId);
+
+        if (updateError) {
+            showFloatingMessage("Error al procesar el costo de entrada.", "#ef4444");
+            return;
+        }
+
+        // Actualizar el saldo visual en el HUD superior
+        let balElem = document.getElementById('userBalance');
+        if (balElem) balElem.innerText = `$${newBalance.toFixed(2)} USD`;
+
+        // ¡Acceso permitido a la arena!
         startArenaGame();
 
     } catch (err) {
@@ -70,7 +126,12 @@ function startArenaGame() {
     isGameActive = true;
     let gallery = document.getElementById('skinGallery');
     if (gallery) gallery.style.display = 'none';
-    showFloatingMessage("¡Partida iniciada con éxito!", "#10b981");
+    
+    // Ocultar botón de inicio si existe
+    let startBtn = document.getElementById('btnStartMatch');
+    if (startBtn) startBtn.style.display = 'none';
+
+    showFloatingMessage("¡Partida iniciada con éxito! ¡A sobrevivir!", "#10b981");
 }
 
 // 4. Función para reportar un Pago Móvil enviando los datos al backend app.py
@@ -110,7 +171,7 @@ async function submitPayment() {
         let result = await response.json();
 
         if (response.ok && result.success) {
-            showFloatingMessage("¡Pago reportado! Notificación enviada al Administrador.", "#10b981");
+            showFloatingMessage("¡Pago reportado! Esperando aprobación en Telegram.", "#10b981");
             if (refInput) refInput.value = "";
             closeModal();
         } else {
@@ -466,6 +527,11 @@ function gameLoop() {
                     isGameActive = false;
                     createGoldCoinsFromCollision(player.trail);
                     showFloatingMessage("¡Colisión! Perdiste tu entrada y soltaste monedas en la arena.", "#ef4444");
+                    
+                    // Volver a mostrar el botón de inicio para pagar nueva entrada
+                    let startBtn = document.getElementById('btnStartMatch');
+                    if (startBtn) startBtn.style.display = 'block';
+
                     setTimeout(() => {
                         player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
                         player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
