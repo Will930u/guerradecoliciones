@@ -11,7 +11,8 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
+    min-height: 100vh;
+    padding: 20px 0;
 }
 
 .login-container {
@@ -20,19 +21,19 @@ body {
     border-radius: 12px;
     padding: 30px;
     width: 100%;
-    max-width: 400px;
+    max-width: 440px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
 }
 
 .login-header {
     text-align: center;
-    margin-bottom: 25px;
+    margin-bottom: 20px;
 }
 
 .login-header h1 {
     color: #10b981;
     font-size: 24px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     text-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
 }
 
@@ -42,24 +43,30 @@ body {
 }
 
 .input-group {
-    margin-bottom: 18px;
+    margin-bottom: 14px;
+    flex: 1;
+}
+
+.input-row {
+    display: flex;
+    gap: 10px;
 }
 
 .input-group label {
     display: block;
-    margin-bottom: 6px;
-    font-size: 13px;
+    margin-bottom: 4px;
+    font-size: 12px;
     color: #cbd5e1;
 }
 
 .input-group input {
     width: 100%;
-    padding: 12px;
+    padding: 10px;
     background: #1e293b;
     border: 1px solid #334155;
     border-radius: 8px;
     color: #fff;
-    font-size: 14px;
+    font-size: 13px;
     outline: none;
     transition: border-color 0.3s;
 }
@@ -68,36 +75,37 @@ body {
     border-color: #10b981;
 }
 
-.button-group {
-    display: flex;
-    gap: 10px;
-    margin-top: 25px;
-}
-
 .btn {
-    flex: 1;
+    width: 100%;
     padding: 12px;
     border: none;
     border-radius: 8px;
     font-weight: bold;
     cursor: pointer;
     font-size: 14px;
-    transition: opacity 0.2s;
-}
-
-.btn.primary {
+    margin-top: 10px;
     background-color: #10b981;
     color: #070c16;
-}
-
-.btn.secondary {
-    background-color: #1e293b;
-    color: #cbd5e1;
-    border: 1px solid #334155;
+    transition: opacity 0.2s;
 }
 
 .btn:hover {
     opacity: 0.9;
+}
+
+.form-footer {
+    text-align: center;
+    margin-top: 15px;
+    font-size: 12px;
+}
+
+.form-footer a {
+    color: #10b981;
+    text-decoration: none;
+}
+
+.form-footer a:hover {
+    text-decoration: underline;
 }
 
 .auth-message {
