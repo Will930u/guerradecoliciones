@@ -93,7 +93,6 @@ def report_payment():
     return jsonify({"error": "Faltan datos obligatorios (user_id, ref)"}), 400
 
   try:
-    # Insertar transacción en la tabla payment_transactions de Supabase[cite: 2]
     response = (
         supabase.table("payment_transactions")
         .insert({
@@ -108,11 +107,9 @@ def report_payment():
         .execute()
     )
 
-    # Obtener el ID de la transacción insertada para los botones de Telegram
     tx_data = response.data
     if tx_data and len(tx_data) > 0:
       payment_id = tx_data[0].get("id")
-      # Enviar notificación interactiva con botones a Telegram
       send_telegram_payment_notification(
           payment_id, amount_usd, amount_ves, reference_number, bcv_rate, phone_number
       )
@@ -129,6 +126,81 @@ def report_payment():
     return jsonify({"error": str(e)}), 500
 
 
+# NUEVO: Endpoint para procesar Solicitudes de Retiro (Cash Out) con los datos del usuario
+@app.route("/api/cashout/request", methods=["POST"])
+def request_cashout():
+  data = request.json or {}
+  user_id = data.get("user_id")
+  amount_usd = data.get("amount_usd")
+  amount_ves = data.get("amount_ves")
+  bcv_rate = data.get("bcv_rate")
+
+  if not user_id or not amount_usd:
+    return jsonify({"error": "Faltan datos obligatorios para el retiro"}), 400
+
+  try:
+    # Consultar los datos de perfil/registro del usuario en Supabase (ej: teléfono, banco, etc.)
+    user_phone = "0412-1234567" # Valor por defecto o extraído de la tabla de perfiles
+    try:
+        profile_resp = supabase.table("users").select("*").eq("id", user_id).execute()
+        if profile_resp.data and len(profile_resp.data) > 0:
+            user_phone = profile_resp.data[0].get("phone", "0412-1234567")
+    except Exception:
+        pass
+
+    # Registrar la transacción de retiro en payment_transactions con status 'cashout_pending'
+    tx_resp = (
+        supabase.table("payment_transactions")
+        .insert({
+            "user_id": user_id,
+            "amount_usd": amount_usd,
+            "bcv_rate": bcv_rate,
+            "amount_ves": amount_ves,
+            "reference_number": "CASHOUT_" + user_id[:6],
+            "phone_number": user_phone,
+            "status": "cashout_pending",
+        })
+        .execute()
+    )
+
+    tx_data = tx_resp.data
+    if not tx_data or len(tx_data) == 0:
+      return jsonify({"error": "No se pudo registrar la solicitud de retiro"}), 500
+
+    payment_id = tx_data[0].get("id")
+
+    # Enviar notificación a Telegram del Administrador con los datos de pago del usuario
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID:
+      url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+      msg = (
+          f"💸 <b>¡Solicitud de Retiro (Cash Out)!</b>\n\n"
+          f"👤 <b>Usuario ID:</b> <code>{user_id}</code>\n"
+          f"💵 <b>Monto USD:</b> ${amount_usd}\n"
+          f"🇻🇪 <b>Monto VES:</b> Bs. {amount_ves}\n"
+          f"📱 <b>Teléfono / Datos de Pago:</b> <code>{user_phone}</code>\n"
+          f"🔢 <b>ID Transacción:</b> <code>{payment_id}</code>"
+      )
+      keyboard = {
+          "inline_keyboard": [
+              [
+                  {"text": "✅ Pagado / Aprobar", "callback_data": f"cashoutpaid_{payment_id}"},
+                  {"text": "❌ Rechazar", "callback_data": f"cashoutreject_{payment_id}"}
+              ]
+          ]
+      }
+      payload = {
+          "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+          "text": msg,
+          "parse_mode": "HTML",
+          "reply_markup": keyboard
+      }
+      requests.post(url, json=payload, timeout=5)
+
+    return jsonify({"success": True, "message": "Solicitud de retiro enviada con éxito"}), 200
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+
 # 2. Endpoint Webhook para recibir clics en los botones de Telegram (Aprobar / Rechazar)
 @app.route("/api/telegram/webhook", methods=["POST"])
 def telegram_webhook():
@@ -136,18 +208,16 @@ def telegram_webhook():
   
   if "callback_query" in data:
     callback = data["callback_query"]
-    callback_data = callback.get("data") # Ej: approve_UUID o reject_UUID
+    callback_data = callback.get("data") # Ej: approve_UUID, reject_UUID, cashoutpaid_UUID, cashoutreject_UUID
     message = callback.get("message", {})
     message_id = message.get("message_id")
     chat_id = message.get("chat", {}).get("id")
     callback_query_id = callback.get("id")
 
     if callback_data and "_" in callback_data:
-      action_type, payment_id = callback_data.split("_", 1)
-      action = "approved" if action_type == "approve" else "rejected"
+      prefix, payment_id = callback_data.split("_", 1)
 
       try:
-        # Consultar la transacción en Supabase
         tx_resp = (
             supabase.table("payment_transactions")
             .select("*")
@@ -156,124 +226,85 @@ def telegram_webhook():
             .execute()
         )
         tx = tx_resp.data
-        if tx and tx.get("status") == "pending":
-          new_status = "verified" if action == "approved" else "rejected"
+        if tx:
+          current_status = tx.get("status")
+          
+          # Manejo de Pagos Entrantes (Recargas)
+          if prefix in ["approve", "reject"] and current_status == "pending":
+            action = "approved" if prefix == "approve" else "rejected"
+            new_status = "verified" if action == "approved" else "rejected"
 
-          # Actualizar estado de la transacción
-          supabase.table("payment_transactions").update({"status": new_status}).eq(
-              "id", payment_id
-          ).execute()
+            supabase.table("payment_transactions").update({"status": new_status}).eq(
+                "id", payment_id
+            ).execute()
 
-          # Si se aprueba, acreditar el saldo en user_wallets[cite: 2]
-          if action == "approved":
-            user_id = tx["user_id"]
-            amount = float(tx["amount_usd"])
+            if action == "approved":
+              user_id = tx["user_id"]
+              amount = float(tx["amount_usd"])
 
-            wallet_resp = (
-                supabase.table("user_wallets")
-                .select("*")
-                .eq("user_id", user_id)
-                .execute()
-            )
-            if wallet_reg := wallet_resp.data:
-              current_bal = float(wallet_reg[0]["balance_usd"])
-              new_bal = current_bal + amount
-              supabase.table("user_wallets").update({"balance_usd": new_bal}).eq(
-                  "user_id", user_id
-              ).execute()
-            else:
-              supabase.table("user_wallets").insert({
-                  "user_id": user_id,
-                  "balance_usd": amount,
-                  "total_earnings_usd": amount,
-              }).execute()
+              wallet_resp = (
+                  supabase.table("user_wallets")
+                  .select("*")
+                  .eq("user_id", user_id)
+                  .execute()
+              )
+              if wallet_reg := wallet_resp.data:
+                current_bal = float(wallet_reg[0]["balance_usd"])
+                new_bal = current_bal + amount
+                supabase.table("user_wallets").update({"balance_usd": new_bal}).eq(
+                    "user_id", user_id
+                ).execute()
+              else:
+                supabase.table("user_wallets").insert({
+                    "user_id": user_id,
+                    "balance_usd": amount,
+                    "total_earnings_usd": amount,
+                }).execute()
 
-          # Responder al callback de Telegram para quitar el estado de carga del botón
-          answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-          requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": f"¡Pago {action} con éxito!"}, timeout=5)
+            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": f"¡Pago {action} con éxito!"}, timeout=5)
 
-          # Editar el mensaje original para mostrar el resultado y remover los botones
-          edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
-          original_text = message.get("text", "Pago Móvil Reportado")
-          status_text = "\n\n<b>✅ ESTADO: APROBADO Y ACREDITADO</b>" if action == "approved" else "\n\n<b>❌ ESTADO: RECHAZADO</b>"
-          requests.post(edit_url, json={
-              "chat_id": chat_id,
-              "message_id": message_id,
-              "text": original_text + status_text,
-              "parse_mode": "HTML"
-          }, timeout=5)
+            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+            original_text = message.get("text", "Pago Móvil Reportado")
+            status_text = "\n\n<b>✅ ESTADO: APROBADO Y ACREDITADO</b>" if action == "approved" else "\n\n<b>❌ ESTADO: RECHAZADO</b>"
+            requests.post(edit_url, json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": original_text + status_text,
+                "parse_mode": "HTML"
+            }, timeout=5)
 
-        else:
-          # Si la transacción ya fue procesada previamente
-          answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-          requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "Este pago ya fue procesado o no existe."}, timeout=5)
+          # Manejo de Retiros (Cash Out)
+          elif prefix in ["cashoutpaid", "cashoutreject"] and current_status == "cashout_pending":
+            is_paid = (prefix == "cashoutpaid")
+            new_status = "paid" if is_paid else "cashout_rejected"
+
+            supabase.table("payment_transactions").update({"status": new_status}).eq(
+                "id", payment_id
+            ).execute()
+
+            action_text = "pagado al usuario" if is_paid else "rechazado"
+            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": f"¡Retiro {action_text}!"}, timeout=5)
+
+            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+            original_text = message.get("text", "Solicitud de Retiro")
+            status_text = "\n\n<b>✅ ESTADO: RETIRO PAGADO CON ÉXITO</b>" if is_paid else "\n\n<b>❌ ESTADO: RETIRO RECHAZADO</b>"
+            requests.post(edit_url, json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": original_text + status_text,
+                "parse_mode": "HTML"
+            }, timeout=5)
+
+          else:
+            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "Esta transacción ya fue procesada previamente."}, timeout=5)
 
       except Exception as e:
         print(f"Error procesando webhook de Telegram: {e}")
 
   return jsonify({"status": "ok"}), 200
-
-
-# 3. Endpoint manual auxiliar para verificación por API
-@app.route("/api/payment/verify", methods=["POST"])
-def verify_payment():
-  data = request.json or {}
-  payment_id = data.get("payment_id")
-  action = data.get("action")  # 'approved' o 'rejected'
-
-  if not payment_id or action not in ["approved", "rejected"]:
-    return jsonify({"error": "Parámetros inválidos"}), 400
-
-  try:
-    tx_resp = (
-        supabase.table("payment_transactions")
-        .select("*")
-        .eq("id", payment_id)
-        .single()
-        .execute()
-    )
-    tx = tx_resp.data
-    if not tx:
-      return jsonify({"error": "Transacción no encontrada"}), 404
-
-    new_status = "verified" if action == "approved" else "rejected"
-
-    supabase.table("payment_transactions").update({"status": new_status}).eq(
-        "id", payment_id
-    ).execute()
-
-    if action == "approved":
-      user_id = tx["user_id"]
-      amount = float(tx["amount_usd"])
-
-      wallet_resp = (
-          supabase.table("user_wallets")
-          .select("*")
-          .eq("user_id", user_id)
-          .execute()
-      )
-      if wallet_reg := wallet_resp.data:
-        current_bal = float(wallet_reg[0]["balance_usd"])
-        new_bal = current_bal + amount
-        supabase.table("user_wallets").update({"balance_usd": new_bal}).eq(
-            "user_id", user_id
-        ).execute()
-      else:
-        supabase.table("user_wallets").insert({
-            "user_id": user_id,
-            "balance_usd": amount,
-            "total_earnings_usd": amount,
-        }).execute()
-
-    return (
-        jsonify({
-            "success": True,
-            "message": f"Transacción {action} con éxito",
-        }),
-        200,
-    )
-  except Exception as e:
-    return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
