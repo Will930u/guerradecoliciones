@@ -327,7 +327,7 @@ let player = {
     y: WORLD_HEIGHT / 2,
     radius: 18,
     maxSegments: INITIAL_SEGMENTS,
-    speed: 4.2,
+    speed: 8,
     trail: [],
     alive: false,
     score: 0,
