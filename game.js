@@ -9,7 +9,7 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // ==========================================
-// [PUNTO 7] CAMBIO 1: MAPA DINÁMICO / EXTENSIBLE (DIMENSIONES EXPANDIBLES)
+// [PUNTO 7] MAPA DINÁMICO / EXTENSIBLE
 // ==========================================
 let WORLD_WIDTH = 6000;
 let WORLD_HEIGHT = 6000;
@@ -22,20 +22,56 @@ let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 const BACKEND_URL = "https://guerradecoliciones.onrender.com"; 
 let currentUserId = localStorage.getItem('supabase_user_id') || "00000000-0000-0000-0000-000000000000";
 
-// ==========================================
-// [PUNTO 11 Y 12] CAMBIO 10 Y 11: CONFIGURACIÓN DE ADMINISTRADOR Y PANEL DE REGALOS / GHOST MODE
-// ==========================================
-const ADMIN_USER_ID = "REEMPLAZA_CON_TU_SUPABASE_USER_ID"; // Reemplaza con tu UUID exacto de Supabase
+let isGameActive = false;
+const ENTRY_FEE = 2.00; 
+let verificationInterval = null;
+let cashOutCheckInterval = null;
+
+const INITIAL_SEGMENTS = 30;
+const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20; 
+
+// Variables para el rol de Administrador controlado desde el Backend
+let isAdminUser = false;
 let adminInvisible = false;
 
-function checkAdminAccess() {
-    if (currentUserId === ADMIN_USER_ID) {
-        showFloatingMessage("👑 ¡Bienvenido Administrador! Panel VIP activado.", "#38bdf8");
-        injectAdminPanel();
+let supabaseClient = null;
+async function initSupabase() {
+    try {
+        let res = await fetch(`${BACKEND_URL}/api/config`);
+        let config = await res.json();
+        
+        // El backend Flask valida y nos dice si el usuario actual es admin
+        if (config.admin_user_id && currentUserId === config.admin_user_id) {
+            isAdminUser = true;
+            showFloatingMessage("👑 ¡Bienvenido Administrador! Panel VIP activado.", "#38bdf8");
+            injectAdminPanel();
+        }
+
+        if (config.supabase_url && config.supabase_anon_key && window.supabase) {
+            supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
+            
+            const { data: sessionData } = await supabaseClient.auth.getSession();
+            if (sessionData && sessionData.session && sessionData.session.user) {
+                currentUserId = sessionData.session.user.id;
+                localStorage.setItem('supabase_user_id', currentUserId);
+                
+                // Re-comprobar si al iniciar sesión coincide con el admin del backend
+                if (config.admin_user_id && currentUserId === config.admin_user_id) {
+                    isAdminUser = true;
+                    showFloatingMessage("👑 ¡Bienvenido Administrador! Panel VIP activado.", "#38bdf8");
+                    injectAdminPanel();
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Error al inicializar cliente Supabase:", e);
     }
 }
-setTimeout(checkAdminAccess, 2000);
+initSupabase();
 
+// ==========================================
+// [PUNTO 11 Y 12] PANEL Y FUNCIONES DE ADMINISTRADOR
+// ==========================================
 function injectAdminPanel() {
     if (document.getElementById('adminPanelContainer')) return;
     let panel = document.createElement('div');
@@ -61,12 +97,14 @@ function injectAdminPanel() {
 }
 
 window.adminFreeEntry = function() {
+    if (!isAdminUser) return;
     closeModal();
     startArenaGame();
     showFloatingMessage("🚀 Ingreso directo a la arena sin costo (Admin VIP).", "#8b5cf6");
 };
 
 window.toggleAdminInvisible = function() {
+    if (!isAdminUser) return;
     adminInvisible = !adminInvisible;
     player.invincible = adminInvisible;
     let btn = document.getElementById('adminInvisBtn');
@@ -78,7 +116,7 @@ window.toggleAdminInvisible = function() {
 };
 
 window.adminDropGift = function(type) {
-    if (!isGameActive || !player.alive) {
+    if (!isAdminUser || !isGameActive || !player.alive) {
         showFloatingMessage("⚠️ Debes estar jugando en la arena para soltar regalos.", "#ef4444");
         return;
     }
@@ -98,35 +136,6 @@ window.adminDropGift = function(type) {
 
     showFloatingMessage(`🎁 ¡Regalo desplegado por Admin! Valor: $${val.toFixed(2)} USD`, "#10b981");
 };
-
-let isGameActive = false;
-const ENTRY_FEE = 2.00; 
-let verificationInterval = null;
-let cashOutCheckInterval = null;
-
-const INITIAL_SEGMENTS = 30;
-const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20; 
-
-let supabaseClient = null;
-async function initSupabase() {
-    try {
-        let res = await fetch(`${BACKEND_URL}/api/config`);
-        let config = await res.json();
-        if (config.supabase_url && config.supabase_anon_key && window.supabase) {
-            supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
-            
-            const { data: sessionData } = await supabaseClient.auth.getSession();
-            if (sessionData && sessionData.session && sessionData.session.user) {
-                currentUserId = sessionData.session.user.id;
-                localStorage.setItem('supabase_user_id', currentUserId);
-                checkAdminAccess(); // Comprobar admin al iniciar sesión
-            }
-        }
-    } catch (e) {
-        console.error("Error al inicializar cliente Supabase:", e);
-    }
-}
-initSupabase();
 
 async function syncBcvRate() {
     try {
@@ -220,7 +229,7 @@ function startWaitingForApproval() {
 }
 
 // ==========================================
-// [PUNTO 8] CAMBIO 2: SPAWN INTELIGENTE, SEGURO Y ESCUDO TEMPORAL
+// [PUNTO 8] SPAWN INTELIGENTE Y SEGURO
 // ==========================================
 function startArenaGame() {
     isGameActive = true;
@@ -235,7 +244,7 @@ function startArenaGame() {
     player.maxSegments = INITIAL_SEGMENTS;
     player.trail = [];
 
-    player.invincible = adminInvisible ? true : true;
+    player.invincible = (isAdminUser && adminInvisible) ? true : true;
     if (!adminInvisible) {
         setTimeout(() => {
             player.invincible = false;
@@ -246,7 +255,7 @@ function startArenaGame() {
     let gallery = document.getElementById('skinGallery');
     if (gallery) gallery.style.display = 'none';
     
-    showFloatingMessage(adminInvisible ? "👻 Entraste en Modo Fantasma (Admin)." : "🛡️ Spawn seguro activado. ¡Protección temporal de 4s!", "#10b981");
+    showFloatingMessage(isAdminUser && adminInvisible ? "👻 Entraste en Modo Fantasma (Admin)." : "🛡️ Spawn seguro activado. ¡Protección temporal de 4s!", "#10b981");
 }
 
 async function submitPayment() {
@@ -296,7 +305,7 @@ async function submitPayment() {
 }
 
 // ==========================================
-// [PUNTO 10] CAMBIO 3: RETIRO DINÁMICO CON CONTADOR FLOTANTE DE 10 SEGUNDOS Y MODO ESPECTADOR
+// [PUNTO 10] RETIRO EN VIVO Y MODO ESPECTADOR
 // ==========================================
 window.attemptCashOut = function() {
     if (player.score < player.cashOutGoal) {
@@ -391,7 +400,7 @@ function startWaitingForCashOutApproval(amountUSD) {
 }
 
 // ==========================================
-// [PUNTO 9] CAMBIO 4: BOTÓN SALIR Y ABANDONO VOLUNTARIO (SOLTAR ACUMULADO)
+// [PUNTO 9] ABANDONO Y DESCONEXIÓN
 // ==========================================
 window.leaveGameVoluntarily = function() {
     if (isGameActive && player.alive) {
@@ -486,9 +495,6 @@ function spawnPellet() {
 
 let goldCoins = [];
 
-// ==========================================
-// [PUNTO 2 Y 3] CAMBIO 5: REGLA ECONÓMICA DE ENTRADA ($1.00 USD) Y BOTÍN DIFERENCIADO
-// ==========================================
 function createGoldCoinsFromPlayerDeath(trail) {
     let prizePool = 1.00;
     let coinsCount = 50;
@@ -561,9 +567,6 @@ for (let i = 0; i < 20; i++) {
     spawnBorderBot(botNamesList[i] || ("Bot_" + i), skinCatalog[randomSkinKey]);
 }
 
-// ==========================================
-// [PUNTO 6] CAMBIO 6: REAPARICIÓN DISCRETA E IMPERCEPTIBLE DE BOTS
-// ==========================================
 function spawnBorderBot(name, skin) {
     let edge = Math.floor(Math.random() * 4);
     let sx, sy, sAngle;
@@ -782,7 +785,7 @@ function gameLoop() {
     }
 
     // ==========================================
-    // [PUNTO 1, 4 Y 5] CAMBIO 7, 8 Y 9: AUTONOMÍA INDIVIDUAL, COMBATE CRUZADO Y EVALUACIÓN DE RIESGO
+    // LÓGICA DE BOTS Y COLISIONES (Modo Fantasma del Admin respetado)
     // ==========================================
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
@@ -792,8 +795,7 @@ function gameLoop() {
         let targetX = null;
         let targetY = null;
 
-        // [PUNTO 1 & 12] Prioridad 1: Cazar al jugador si está cerca (y el admin NO está en modo fantasma/invisible)
-        if (player.alive && isGameActive && !adminInvisible) {
+        if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
             let dPlayer = Math.hypot(bot.x - player.x, bot.y - player.y);
             if (dPlayer < 550) {
                 closestDist = dPlayer;
@@ -803,7 +805,6 @@ function gameLoop() {
             }
         }
 
-        // [PUNTO 4] Prioridad 2: Combate cruzado entre bots con superviviencia calculada
         if (!targetX) {
             for (let otherBot of bots) {
                 if (otherBot !== bot && otherBot.alive) {
@@ -822,13 +823,12 @@ function gameLoop() {
             }
         }
 
-        // [PUNTO 5] Prioridad 3: Buscar oro con evaluación de riesgo (evita pozos acorralados por el jugador)
         if (!targetX) {
             for (let coin of goldCoins) {
                 let d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
                 if (d < 450 && d < closestDist) {
                     let isSafeToGrab = true;
-                    if (player.alive && isGameActive && !adminInvisible) {
+                    if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
                         let distPlayerToCoin = Math.hypot(player.x - coin.x, player.y - coin.y);
                         if (distPlayerToCoin < 300) {
                             isSafeToGrab = false;
@@ -865,8 +865,7 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-        // Colisión del Jugador contra Bot (Ignorada si adminInvisible está activo)
-        if (player.alive && isGameActive && !player.invincible && !adminInvisible) {
+        if (player.alive && isGameActive && !player.invincible && !(isAdminUser && adminInvisible)) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
@@ -885,8 +884,7 @@ function gameLoop() {
             }
         }
 
-        // Colisión del Bot contra Jugador
-        if (player.alive && isGameActive && !adminInvisible) {
+        if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
                     createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
@@ -901,7 +899,6 @@ function gameLoop() {
             }
         }
 
-        // Combate de Bots entre sí
         for (let otherBot of bots) {
             if (otherBot !== bot && otherBot.alive) {
                 for (let segment of otherBot.trail) {
@@ -933,16 +930,16 @@ function gameLoop() {
     }
 
     // ==========================================
-    // [PUNTO 12] CAMBIO 12: RENDERIZADO VISIBLE O FANTASMA DEL JUGADOR ADMIN
+    // RENDERIZADO DEL JUGADOR (O FANTASMA ADMIN)
     // ==========================================
     if (player.alive && isGameActive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-        if (!adminInvisible) {
+        if (!(isAdminUser && adminInvisible)) {
             drawOrganicBody(ctx, player.trail, player.radius, player.skin);
             drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score);
         } else {
             ctx.save();
-            ctx.globalAlpha = 0.35; // Translúcido para el admin en modo fantasma
+            ctx.globalAlpha = 0.35;
             drawOrganicBody(ctx, player.trail, player.radius, player.skin);
             drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name + " (👻 FANTASMA)", player.score);
             ctx.restore();
