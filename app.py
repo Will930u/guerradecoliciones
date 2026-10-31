@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import requests
 from flask import Flask, jsonify, request
@@ -156,10 +157,19 @@ def request_cashout():
           f"📱 <b>Teléfono / Datos de Pago:</b> <code>{user_phone}</code>\n\n"
           f"🆔 <b>ID Transacción:</b> <code>{payment_id}</code>"
       )
+      keyboard = {
+          "inline_keyboard": [
+              [
+                  {"text": "✅ Pagado / Aprobar", "callback_data": f"cashoutpaid_{payment_id}"},
+                  {"text": "❌ Rechazar", "callback_data": f"cashoutreject_{payment_id}"}
+              ]
+          ]
+      }
       payload = {
           "chat_id": TELEGRAM_ADMIN_CHAT_ID,
           "text": msg,
-          "parse_mode": "HTML"
+          "parse_mode": "HTML",
+          "reply_markup": keyboard
       }
       requests.post(url, json=payload, timeout=5)
 
@@ -172,6 +182,7 @@ def request_cashout():
 def telegram_webhook():
   data = request.json or {}
   
+  # OPCIÓN 1: El administrador respondió (Reply) al mensaje con la referencia de pago
   if "message" in data:
     msg = data["message"]
     chat_id = msg.get("chat", {}).get("id")
@@ -182,31 +193,23 @@ def telegram_webhook():
       reply_text = reply_to.get("text", "") or reply_to.get("caption", "")
       
       try:
-        import re
         payment_id = None
-        
-        # Extracción universal: busca la línea de ID Transacción y extrae cualquier valor posterior
         for line in reply_text.split("\n"):
           if "ID Transacción:" in line or "Transacción:" in line:
-            # Limpiar etiquetas HTML como <code> o </code>
             clean_line = re.sub(r'<[^>]+>', '', line)
             parts = clean_line.split(":")
             if len(parts) > 1:
               payment_id = parts[1].strip()
               break
 
-        print(f"DEBUG: ID Extraído del mensaje original por Reply: {payment_id}")
-
         if payment_id:
-          # Intentar buscar por el ID exacto (sea número o string/UUID)
           tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
           tx = tx_resp.data
           
           if tx:
             current_status = tx.get("status")
-            print(f"DEBUG: Estado actual en Supabase: {current_status}")
             
-            # Retiro Aprobado por Reply
+            # Aprobar Retiro por Reply
             if current_status == "cashout_pending":
               supabase.table("payment_transactions").update({
                   "status": "paid",
@@ -221,7 +224,7 @@ def telegram_webhook():
                   "reply_to_message_id": msg.get("message_id")
               }, timeout=5)
 
-            # Recarga Aprobada por Reply
+            # Aprobar Recarga por Reply
             elif current_status == "pending":
               supabase.table("payment_transactions").update({
                   "status": "verified",
@@ -254,6 +257,7 @@ def telegram_webhook():
       except Exception as e:
         print(f"Error procesando reply en Telegram: {e}")
 
+  # OPCIÓN 2: El administrador hizo clic en los botones interactivos (Aprobar / Rechazar / Pagado)
   elif "callback_query" in data:
     callback = data["callback_query"]
     callback_data = callback.get("data")
@@ -268,10 +272,86 @@ def telegram_webhook():
         tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
         tx = tx_resp.data
         if tx:
-          if prefix == "cashoutpaid" and tx.get("status") == "cashout_pending":
-            supabase.table("payment_transactions").update({"status": "paid"}).eq("id", payment_id).execute()
+          current_status = tx.get("status")
+          
+          # 1. Aprobar Recarga por Botón
+          if prefix == "approve" and current_status == "pending":
+            supabase.table("payment_transactions").update({"status": "verified"}).eq("id", payment_id).execute()
+            
+            user_id = tx["user_id"]
+            amount = float(tx["amount_usd"])
+            wallet_resp = supabase.table("user_wallets").select("*").eq("user_id", user_id).execute()
+            if wallet_reg := wallet_resp.data:
+              current_bal = float(wallet_reg[0]["balance_usd"])
+              new_bal = current_bal + amount
+              supabase.table("user_wallets").update({"balance_usd": new_bal}).eq("user_id", user_id).execute()
+            else:
+              supabase.table("user_wallets").insert({
+                  "user_id": user_id,
+                  "balance_usd": amount,
+                  "total_earnings_usd": amount,
+              }).execute()
+
             answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "¡Retiro pagado con éxito!"}, timeout=5)
+            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "¡Pago aprobado y acreditado!"}, timeout=5)
+
+            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+            original_text = message.get("text", "Pago Móvil Reportado")
+            requests.post(edit_url, json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": original_text + "\n\n<b>✅ ESTADO: APROBADO Y ACREDITADO</b>",
+                "parse_mode": "HTML"
+            }, timeout=5)
+
+          # 2. Rechazar Recarga por Botón
+          elif prefix == "reject" and current_status == "pending":
+            supabase.table("payment_transactions").update({"status": "rejected"}).eq("id", payment_id).execute()
+            
+            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "Pago rechazado."}, timeout=5)
+
+            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+            original_text = message.get("text", "Pago Móvil Reportado")
+            requests.post(edit_url, json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": original_text + "\n\n<b>❌ ESTADO: RECHAZADO</b>",
+                "parse_mode": "HTML"
+            }, timeout=5)
+
+          # 3. Aprobar Retiro (Cash Out) por Botón
+          elif prefix == "cashoutpaid" and current_status == "cashout_pending":
+            supabase.table("payment_transactions").update({"status": "paid"}).eq("id", payment_id).execute()
+            
+            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "¡Retiro marcado como pagado!"}, timeout=5)
+
+            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+            original_text = message.get("text", "Solicitud de Retiro")
+            requests.post(edit_url, json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": original_text + "\n\n<b>✅ ESTADO: RETIRO PAGADO CON ÉXITO</b>",
+                "parse_mode": "HTML"
+            }, timeout=5)
+
+          # 4. Rechazar Retiro por Botón
+          elif prefix == "cashoutreject" and current_status == "cashout_pending":
+            supabase.table("payment_transactions").update({"status": "cashout_rejected"}).eq("id", payment_id).execute()
+            
+            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "Retiro rechazado."}, timeout=5)
+
+            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+            original_text = message.get("text", "Solicitud de Retiro")
+            requests.post(edit_url, json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": original_text + "\n\n<b>❌ ESTADO: RETIRO RECHAZADO</b>",
+                "parse_mode": "HTML"
+            }, timeout=5)
+
       except Exception as e:
         print(f"Error en callback: {e}")
 
