@@ -48,7 +48,7 @@ async function initSupabase() {
 }
 initSupabase();
 
-// 1. Obtener la Tasa BCV desde la API oficial
+// Obtener Tasa BCV Oficial
 async function syncBcvRate() {
     try {
         let response = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
@@ -65,7 +65,7 @@ async function syncBcvRate() {
 }
 syncBcvRate();
 
-// Sincronizar saldo de la billetera al cargar la página
+// Sincronizar saldo de billetera
 async function syncUserWallet() {
     if (!currentUserId || currentUserId === "00000000-0000-0000-0000-000000000000") return;
     try {
@@ -88,7 +88,7 @@ async function syncUserWallet() {
 }
 setTimeout(syncUserWallet, 1500);
 
-// 2. FUNCIÓN DE ESPERA ACTIVA (POLLING) - DETECTA LA APROBACIÓN EN TELEGRAM Y ENTRA AUTOMÁTICO
+// Espera activa para aprobación de recargas
 function startWaitingForApproval() {
     showFloatingMessage("⏳ Pago reportado. Esperando aprobación en Telegram...", "#eab308");
     
@@ -142,7 +142,7 @@ function startWaitingForApproval() {
     }, 3000);
 }
 
-// 3. INICIO DE LA ARENA
+// Inicialización de la Arena
 function startArenaGame() {
     isGameActive = true;
     player.alive = true;
@@ -158,7 +158,7 @@ function startArenaGame() {
     showFloatingMessage("¡Partida iniciada con éxito! ¡A sobrevivir!", "#10b981");
 }
 
-// 4. Reportar Pago Móvil y activar la espera automática
+// Envío de reporte de pago
 async function submitPayment() {
     const refInput = document.getElementById('refInput');
     const ref = refInput ? refInput.value.trim() : "";
@@ -205,16 +205,14 @@ async function submitPayment() {
     }
 }
 
-// ==========================================
-// 5. SOLICITUD DE RETIRO (CASH OUT) GLOBAL
-// ==========================================
+// Solicitud de Retiro (Cash Out) con Salida de Arena
 window.attemptCashOut = async function() {
     if (player.score < player.cashOutGoal) {
         showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
         return;
     }
 
-    // Detener la partida de inmediato
+    // Salida inmediata de la arena a la pantalla de espera
     isGameActive = false;
     player.alive = false;
 
@@ -230,9 +228,9 @@ window.attemptCashOut = async function() {
         modalBody.innerHTML = `
             <div style="text-align: center; padding: 25px;">
                 <div style="font-size: 2.8rem; margin-bottom: 15px;">⏳</div>
-                <p style="color: #eab308; font-weight: bold; font-size: 1.2rem;">Cargando Retiro...</p>
+                <p style="color: #eab308; font-weight: bold; font-size: 1.2rem;">Cargando operación de retiro...</p>
                 <p style="font-size: 0.95rem; color: #94a3b8; margin-top: 10px;">Monto: <strong>$${amountUSD} USD</strong> (Bs. ${amountVES})</p>
-                <p style="font-size: 0.85rem; color: #64748b; margin-top: 8px;">Esperando que respondas con la referencia en Telegram...</p>
+                <p style="font-size: 0.85rem; color: #64748b; margin-top: 8px;">En espera de la confirmación por parte del administrador...</p>
             </div>
         `;
     }
@@ -256,19 +254,19 @@ window.attemptCashOut = async function() {
         } else {
             showFloatingMessage(result.error || "Error al solicitar retiro.", "#ef4444");
             closeModal();
-            isGameActive = true;
-            player.alive = true;
+            let gallery = document.getElementById('skinGallery');
+            if (gallery) gallery.style.display = 'block';
         }
     } catch (err) {
         console.error("Error al solicitar retiro:", err);
         showFloatingMessage("Error de conexión al solicitar retiro.", "#ef4444");
         closeModal();
-        isGameActive = true;
-        player.alive = true;
+        let gallery = document.getElementById('skinGallery');
+        if (gallery) gallery.style.display = 'block';
     }
-}
+};
 
-// Sondeo para detectar el pago y mostrar la notificación flotante de éxito
+// Sondeo continuo para detectar la respuesta por Reply en Telegram
 function startWaitingForCashOutApproval(amountUSD) {
     if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
 
@@ -276,7 +274,7 @@ function startWaitingForCashOutApproval(amountUSD) {
         if (!supabaseClient || !currentUserId) return;
 
         try {
-            const { data: txs, error } = await supabaseClient
+            const { data: txs } = await supabaseClient
                 .from('payment_transactions')
                 .select('*')
                 .eq('user_id', currentUserId)
@@ -289,17 +287,12 @@ function startWaitingForCashOutApproval(amountUSD) {
                     clearInterval(cashOutCheckInterval);
                     cashOutCheckInterval = null;
 
-                    // 1. Cerrar el modal de carga
                     closeModal();
+                    showFloatingMessage(`¡Retiro de $${amountUSD} USD procesado con éxito! Referencia: ${tx.reference_number}`, "#10b981");
 
-                    // 2. Mostrar la notificación flotante de éxito al usuario
-                    showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado con éxito a tu cuenta! 🚀`, "#10b981");
-
-                    // 3. Reiniciar puntaje y segmentos del jugador
                     player.score = 0;
                     player.maxSegments = INITIAL_SEGMENTS;
 
-                    // 4. Mostrar de nuevo la galería de skins / menú principal
                     let gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
                 }
@@ -309,9 +302,8 @@ function startWaitingForCashOutApproval(amountUSD) {
         }
     }, 4000);
 }
-// ==========================================
 
-// Catálogo de Skins Temáticas
+// Catálogo de Skins
 const skinCatalog = {
     cyber_dragon: { name: "Digital Dragon", primaryColor: "#10b981", secondaryColor: "#065f46" },
     fire_scale: { name: "FireScale Killa", primaryColor: "#ef4444", secondaryColor: "#991b1b" },
@@ -342,7 +334,7 @@ let player = {
     score: 0,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
-    cashOutGoal: 50.0, // Meta realista para la barra
+    cashOutGoal: 50.0,
     invincible: false
 };
 
@@ -578,7 +570,7 @@ function gameLoop() {
 
     drawHexMap(ctx);
 
-    // Comida Pequeña (Con límite de 600 segmentos)
+    // Comida Pequeña
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -593,7 +585,7 @@ function gameLoop() {
         }
     }
 
-    // Monedas / Orbes de $0.01 USD
+    // Monedas / Orbes
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -659,7 +651,7 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-        // 1. COLISIÓN DEL JUGADOR CONTRA EL BOT (EL JUGADOR MUERE)
+        // Colisión contra el Bot
         if (player.alive && isGameActive && !player.invincible) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
@@ -675,7 +667,7 @@ function gameLoop() {
             }
         }
 
-        // 2. COLISIÓN DEL BOT CONTRA LA ESTELA DEL JUGADOR (EL BOT MUERE)
+        // Colisión del Bot contra el Jugador
         if (player.alive && isGameActive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
@@ -705,7 +697,7 @@ function gameLoop() {
 
     ctx.restore();
 
-    // Control de la barra y el botón de Cash Out
+    // Actualización visual de la barra de Cash Out
     let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
     let barFill = document.getElementById('cashBarFill');
     if (barFill) barFill.style.width = progress + '%';
