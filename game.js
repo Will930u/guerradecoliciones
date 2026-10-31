@@ -390,10 +390,9 @@ function createGoldCoinsFromPlayerDeath(trail) {
     }
 }
 
-// Al morir un bot: si tiene valor acumulado, suelta esas monedas de valor; si no, solo puntos de crecimiento estándar
+// Al morir un bot: SOLO suelta monedas de valor si acumuló capital matando a un usuario real; si no, solo puntos estándar
 function createCoinsOrPelletsFromBotDeath(trail, botScore) {
     if (botScore > 0) {
-        // Soltar monedas monetarias equivalentes al valor que tenía el bot
         let coinsCount = Math.max(10, Math.floor(botScore * 50));
         let valuePerCoin = botScore / coinsCount;
         for (let i = 0; i < coinsCount; i++) {
@@ -407,7 +406,7 @@ function createCoinsOrPelletsFromBotDeath(trail, botScore) {
             });
         }
     } else {
-        // Solo suelta puntos de crecimiento estándar (sin valor en dinero)
+        // Ningún bot con valor 0 suelta dinero al morir, solo bolitas de comida estándar
         for (let i = 0; i < 15; i++) {
             let randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: 0, y: 0 };
             foodPellets.push({
@@ -453,7 +452,7 @@ function spawnBorderBot(name, skin) {
         angle: sAngle,
         changeTimer: 0,
         trail: [],
-        score: 0, // Los bots inician estrictamente con valor 0
+        score: 0, // Los bots inician estrictamente con valor 0.00
         alive: true
     });
 }
@@ -651,7 +650,7 @@ function gameLoop() {
         if (coinEaten) continue;
     }
 
-    // IA DE LOS BOTS, EVALUACIÓN DE RIESGO Y COMBATE CRUZADO
+    // IA TÁCTICA DE LOS BOTS, EVALUACIÓN DE RIESGO Y COMBATE ENTRE BOTS CON AUTONOMÍA
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -660,7 +659,7 @@ function gameLoop() {
         let targetX = null;
         let targetY = null;
 
-        // Prioridad 1: Atacar al jugador si está cerca
+        // Prioridad 1: Cazar al jugador si está cerca
         if (player.alive && isGameActive) {
             let dPlayer = Math.hypot(bot.x - player.x, bot.y - player.y);
             if (dPlayer < 550) {
@@ -671,31 +670,38 @@ function gameLoop() {
             }
         }
 
-        // Prioridad 2: Atacar a otros bots si no hay jugador cercano
+        // Prioridad 2: Atacar a otros bots si no hay jugador cercano (con cálculo de supervivencia para evitar morir tontamente)
         if (!targetX) {
             for (let otherBot of bots) {
                 if (otherBot !== bot && otherBot.alive) {
                     let dBot = Math.hypot(bot.x - otherBot.x, bot.y - otherBot.y);
                     if (dBot < 350 && dBot < closestDist) {
-                        closestDist = dBot;
-                        targetX = otherBot.x;
-                        targetY = otherBot.y;
+                        // Comprobación de supervivencia: Si el otro bot es mucho más grande/largo, este bot decide huir o no arriesgarse
+                        if (otherBot.maxSegments > bot.maxSegments * 1.3) {
+                            // Huir del bot más grande
+                            let escapeAngle = Math.atan2(bot.y - otherBot.y, bot.x - otherBot.x);
+                            bot.angle = escapeAngle;
+                        } else {
+                            closestDist = dBot;
+                            targetX = otherBot.x;
+                            targetY = otherBot.y;
+                        }
                     }
                 }
             }
         }
 
-        // Prioridad 3: Buscar monedas de valor con EVALUACIÓN DE RIESGO (Evitar si un jugador las vigila o acorrala)
+        // Prioridad 3: Buscar monedas de valor con EVALUACIÓN DE RIESGO ESTRICTA (Anti-Acorralamiento)
         if (!targetX) {
             for (let coin of goldCoins) {
                 let d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
                 if (d < 450 && d < closestDist) {
-                    // Comprobación de seguridad: Si hay un jugador vivo cerca de la moneda (< 300px), el bot detecta que es una trampa y la ignora
                     let isSafeToGrab = true;
+                    // Si el jugador real está cerca de las monedas (< 300px), el bot detecta que están custodiadas o acorraladas y las evita
                     if (player.alive && isGameActive) {
                         let distPlayerToCoin = Math.hypot(player.x - coin.x, player.y - coin.y);
                         if (distPlayerToCoin < 300) {
-                            isSafeToGrab = false; // Zona acorralada o custodiada por el jugador
+                            isSafeToGrab = false;
                         }
                     }
 
@@ -729,19 +735,18 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-        // 1. COLISIÓN DEL JUGADOR CONTRA UN BOT (EL JUGADOR MUERE, EL BOT TOMA VALOR Y SUELTA EL POZO DE $1.00 USD)
+        // 1. COLISIÓN DEL JUGADOR CONTRA UN BOT (EL JUGADOR MUERE, EL BOT TOMA EL VALOR DE LA ENTRADA = $1.00 USD)
         if (player.alive && isGameActive && !player.invincible) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
                     isGameActive = false;
                     
-                    // El bot absorbe el valor de la entrada del jugador real ($1.00 USD)
-                    bot.score += 1.00;
+                    bot.score += 1.00; // El bot adquiere valor real tras eliminar al usuario
                     bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
 
                     createGoldCoinsFromPlayerDeath(player.trail);
-                    showFloatingMessage(`💥 ¡Colisión con ${bot.name}! Perdiste tu entrada y soltaste el pozo de recompensa en la arena.`, "#ef4444");
+                    showFloatingMessage(`💥 ¡Colisión con ${bot.name}! Perdiste tu entrada y soltaste el pozo en la arena.`, "#ef4444");
                     
                     let gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
@@ -750,7 +755,7 @@ function gameLoop() {
             }
         }
 
-        // 2. COLISIÓN DE UN BOT CONTRA LA ESTELA DEL JUGADOR (EL BOT MUERE - Si tenía valor, suelta monedas; si no, solo puntos de crecimiento)
+        // 2. COLISIÓN DE UN BOT CONTRA LA ESTELA DEL JUGADOR (EL BOT MUERE - Sin valor = solo puntos; Con valor = suelta monedas)
         if (player.alive && isGameActive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
@@ -760,22 +765,21 @@ function gameLoop() {
                     let deadName = bot.name;
                     let deadSkin = bot.skin;
                     bots.splice(bIndex, 1);
-                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000); // Renacimiento silencioso y discreto
+                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000); // Reaparición discreta
                     break;
                 }
             }
         }
 
-        // 3. COMBATE ENTRE BOTS (UN BOT CHOCA CONTRA LA ESTELA DE OTRO BOT)
+        // 3. COMBATE TÁCTICO ENTRE BOTS
         for (let otherBot of bots) {
             if (otherBot !== bot && otherBot.alive) {
                 for (let segment of otherBot.trail) {
                     if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + otherBot.radius * 0.6) {
                         bot.alive = false;
                         
-                        // Si el bot muerto tenía valor, el otro bot absorbe ese valor; si no, solo crece
                         if (bot.score > 0) {
-                            otherBot.score += bot.score;
+                            otherBot.score += bot.score; // Absorbe el valor si tenía
                         }
                         otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 20);
 
@@ -784,7 +788,7 @@ function gameLoop() {
                         let deadName = bot.name;
                         let deadSkin = bot.skin;
                         bots.splice(bIndex, 1);
-                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000); // Renacimiento silencioso
+                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000); // Reaparición silenciosa
                         break;
                     }
                 }
