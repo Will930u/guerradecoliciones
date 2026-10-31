@@ -33,6 +33,7 @@ const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20;
 // Variables para el rol de Administrador controlado desde el Backend
 let isAdminUser = false;
 let adminInvisible = false;
+let adminPanelCollapsed = false; // [MEJORA] Estado inicial expandido/plegado
 
 let supabaseClient = null;
 async function initSupabase() {
@@ -70,7 +71,7 @@ async function initSupabase() {
 initSupabase();
 
 // ==========================================
-// [PUNTO 11 Y 12] PANEL Y FUNCIONES DE ADMINISTRADOR
+// [PUNTO 11 Y 12] PANEL PLEGABLE Y FUNCIONES DE ADMINISTRADOR
 // ==========================================
 function injectAdminPanel() {
     if (document.getElementById('adminPanelContainer')) return;
@@ -79,22 +80,49 @@ function injectAdminPanel() {
     panel.style.cssText = `
         position: fixed; top: 20px; left: 20px; z-index: 9999;
         background: rgba(15, 23, 42, 0.95); border: 2px solid #38bdf8;
-        padding: 15px; border-radius: 12px; color: #fff; font-family: sans-serif;
+        padding: 12px; border-radius: 12px; color: #fff; font-family: sans-serif;
         box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 260px;
+        transition: all 0.3s ease;
     `;
+    
     panel.innerHTML = `
-        <h3 style="margin: 0 0 10px 0; font-size: 1rem; color: #38bdf8; text-align: center;">👑 Panel de Administrador</h3>
-        <div style="margin-bottom: 10px;">
-            <label style="font-size: 0.8rem; color: #94a3b8;">Valor del Regalo ($ USD):</label>
-            <input type="number" id="adminGiftValue" value="1.00" step="0.1" style="width: 100%; padding: 6px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px; margin-top: 4px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleAdminPanelCollapse()">
+            <h3 style="margin: 0; font-size: 0.95rem; color: #38bdf8;">👑 Admin Panel</h3>
+            <span id="adminToggleIcon" style="font-size: 1rem; color: #38bdf8; font-weight: bold;">[-]</span>
         </div>
-        <button onclick="adminDropGift('chest')" style="width: 100%; padding: 8px; margin-bottom: 6px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🎁 Soltar Cofre de Regalo</button>
-        <button onclick="adminDropGift('star')" style="width: 100%; padding: 8px; margin-bottom: 10px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⭐ Soltar Estrella Dorada</button>
-        <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 8px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">👻 Modo Fantasma: OFF</button>
-        <button onclick="adminFreeEntry()" style="width: 100%; padding: 8px; margin-top: 8px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🚀 Ingreso VIP Gratuito</button>
+        <div id="adminPanelBody" style="margin-top: 10px; display: block;">
+            <div style="margin-bottom: 8px;">
+                <label style="font-size: 0.75rem; color: #94a3b8;">Valor del Regalo ($ USD):</label>
+                <input type="number" id="adminGiftValue" value="1.00" step="0.1" style="width: 100%; padding: 5px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px; margin-top: 3px; font-size: 0.85rem;">
+            </div>
+            <button onclick="adminDropGift('chest')" style="width: 100%; padding: 7px; margin-bottom: 5px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🎁 Soltar Cofre de Regalo</button>
+            <button onclick="adminDropGift('star')" style="width: 100%; padding: 7px; margin-bottom: 8px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">⭐ Soltar Estrella Dorada</button>
+            <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">👻 Modo Fantasma: OFF</button>
+            <button onclick="adminSpawnDirect()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🎮 Spawn / Entrar Directo</button>
+            <button onclick="adminFreeEntry()" style="width: 100%; padding: 7px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🚀 Ingreso VIP Gratuito</button>
+        </div>
     `;
     document.body.appendChild(panel);
 }
+
+window.toggleAdminPanelCollapse = function() {
+    adminPanelCollapsed = !adminPanelCollapsed;
+    let body = document.getElementById('adminPanelBody');
+    let icon = document.getElementById('adminToggleIcon');
+    let panel = document.getElementById('adminPanelContainer');
+    if (body && icon) {
+        body.style.display = adminPanelCollapsed ? 'none' : 'block';
+        icon.innerText = adminPanelCollapsed ? '[+]' : '[-]';
+        panel.style.width = adminPanelCollapsed ? '140px' : '260px';
+    }
+};
+
+window.adminSpawnDirect = function() {
+    if (!isAdminUser) return;
+    closeModal();
+    startArenaGame();
+    showFloatingMessage("🎮 Reaparición instantánea de Administrador activada.", "#06b6d4");
+};
 
 window.adminFreeEntry = function() {
     if (!isAdminUser) return;
