@@ -205,14 +205,16 @@ async function submitPayment() {
     }
 }
 
-// 5. SOLICITUD DE RETIRO (CASH OUT): SACA AL JUGADOR, MUESTRA CARGANDO Y MONITOREA EL PAGO
-async function attemptCashOut() {
+// ==========================================
+// 5. SOLICITUD DE RETIRO (CASH OUT) GLOBAL
+// ==========================================
+window.attemptCashOut = async function() {
     if (player.score < player.cashOutGoal) {
         showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
         return;
     }
 
-    // Sacar al usuario de la partida de inmediato
+    // Detener la partida de inmediato
     isGameActive = false;
     player.alive = false;
 
@@ -230,7 +232,7 @@ async function attemptCashOut() {
                 <div style="font-size: 2.8rem; margin-bottom: 15px;">⏳</div>
                 <p style="color: #eab308; font-weight: bold; font-size: 1.2rem;">Cargando Retiro...</p>
                 <p style="font-size: 0.95rem; color: #94a3b8; margin-top: 10px;">Monto: <strong>$${amountUSD} USD</strong> (Bs. ${amountVES})</p>
-                <p style="font-size: 0.85rem; color: #64748b; margin-top: 8px;">El Administrador está procesando tu pago móvil a tus datos registrados. Espera la confirmación...</p>
+                <p style="font-size: 0.85rem; color: #64748b; margin-top: 8px;">Esperando que respondas con la referencia en Telegram...</p>
             </div>
         `;
     }
@@ -254,19 +256,19 @@ async function attemptCashOut() {
         } else {
             showFloatingMessage(result.error || "Error al solicitar retiro.", "#ef4444");
             closeModal();
-            let gallery = document.getElementById('skinGallery');
-            if (gallery) gallery.style.display = 'block';
+            isGameActive = true;
+            player.alive = true;
         }
     } catch (err) {
         console.error("Error al solicitar retiro:", err);
         showFloatingMessage("Error de conexión al solicitar retiro.", "#ef4444");
         closeModal();
-        let gallery = document.getElementById('skinGallery');
-        if (gallery) gallery.style.display = 'block';
+        isGameActive = true;
+        player.alive = true;
     }
 }
 
-// Sondeo automático para detectar cuando el administrador marca el pago como realizado en Telegram
+// Sondeo para detectar el pago y mostrar la notificación flotante de éxito
 function startWaitingForCashOutApproval(amountUSD) {
     if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
 
@@ -290,10 +292,10 @@ function startWaitingForCashOutApproval(amountUSD) {
                     // 1. Cerrar el modal de carga
                     closeModal();
 
-                    // 2. Mostrar notificación flotante de éxito al usuario
+                    // 2. Mostrar la notificación flotante de éxito al usuario
                     showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado con éxito a tu cuenta! 🚀`, "#10b981");
 
-                    // 3. Reiniciar puntaje y segmentos
+                    // 3. Reiniciar puntaje y segmentos del jugador
                     player.score = 0;
                     player.maxSegments = INITIAL_SEGMENTS;
 
