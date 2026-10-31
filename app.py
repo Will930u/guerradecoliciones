@@ -1,5 +1,4 @@
 import os
-import re
 import time
 import requests
 from flask import Flask, jsonify, request
@@ -183,16 +182,29 @@ def telegram_webhook():
       reply_text = reply_to.get("text", "") or reply_to.get("caption", "")
       
       try:
-        # Búsqueda por UUID en la plantilla del mensaje enviado por el bot
-        uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', reply_text, re.IGNORECASE)
-        payment_id = uuid_match.group(0) if uuid_match else None
+        import re
+        payment_id = None
+        
+        # Extracción universal: busca la línea de ID Transacción y extrae cualquier valor posterior
+        for line in reply_text.split("\n"):
+          if "ID Transacción:" in line or "Transacción:" in line:
+            # Limpiar etiquetas HTML como <code> o </code>
+            clean_line = re.sub(r'<[^>]+>', '', line)
+            parts = clean_line.split(":")
+            if len(parts) > 1:
+              payment_id = parts[1].strip()
+              break
+
+        print(f"DEBUG: ID Extraído del mensaje original por Reply: {payment_id}")
 
         if payment_id:
+          # Intentar buscar por el ID exacto (sea número o string/UUID)
           tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
           tx = tx_resp.data
           
           if tx:
             current_status = tx.get("status")
+            print(f"DEBUG: Estado actual en Supabase: {current_status}")
             
             # Retiro Aprobado por Reply
             if current_status == "cashout_pending":
