@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -156,7 +157,7 @@ def request_cashout():
             "amount_usd": amount_usd,
             "bcv_rate": bcv_rate,
             "amount_ves": amount_ves,
-            "reference_number": "CASHOUT_" + user_id[:6],
+            "reference_number": f"CASHOUT_{user_id[:6]}_{int(time.time())}",
             "phone_number": user_phone,
             "status": "cashout_pending",
         })
