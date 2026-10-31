@@ -205,7 +205,7 @@ async function submitPayment() {
     }
 }
 
-// Solicitud de Retiro (Cash Out) con Salida de Arena
+// Solicitud de Retiro (Cash Out) con Sala de Espera
 window.attemptCashOut = async function() {
     if (player.score < player.cashOutGoal) {
         showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
@@ -266,7 +266,7 @@ window.attemptCashOut = async function() {
     }
 };
 
-// Sondeo continuo para detectar la respuesta por Reply en Telegram
+// Sondeo continuo para detectar la respuesta por Reply en Telegram y mostrar notificación flotante
 function startWaitingForCashOutApproval(amountUSD) {
     if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
 
@@ -585,27 +585,44 @@ function gameLoop() {
         }
     }
 
-    // Monedas / Orbes
+    // Monedas / Orbes (Consumidas tanto por el Jugador como por los Bots)
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
         ctx.beginPath(); ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2); ctx.fill();
 
+        let coinEaten = false;
+
+        // Si el jugador se come la moneda
         if (player.alive && isGameActive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
             player.score += coin.value;
             if (player.maxSegments < MAX_SEGMENTS_LIMIT) {
                 player.maxSegments += Math.min(2, MAX_SEGMENTS_LIMIT - player.maxSegments);
             }
             goldCoins.splice(i, 1);
+            continue;
         }
+
+        // Si un bot se come la moneda
+        for (let bot of bots) {
+            if (bot.alive && Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
+                bot.score += coin.value;
+                if (bot.maxSegments < MAX_SEGMENTS_LIMIT) {
+                    bot.maxSegments += 1;
+                }
+                goldCoins.splice(i, 1);
+                coinEaten = true;
+                break;
+            }
+        }
+        if (coinEaten) continue;
     }
 
-    // IA DE LOS BOTS
+    // IA DE LOS BOTS (Movimiento fluido, búsqueda de monedas y anti-atascos)
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
 
-        let targetAngle = bot.angle;
         let closestDist = 9999;
         let targetX = null;
         let targetY = null;
@@ -632,21 +649,23 @@ function gameLoop() {
         }
 
         if (targetX !== null && targetY !== null) {
-            targetAngle = Math.atan2(targetY - bot.y, targetX - bot.x);
+            let desiredAngle = Math.atan2(targetY - bot.y, targetX - bot.x);
+            let angleDiff = Math.atan2(Math.sin(desiredAngle - bot.angle), Math.cos(desiredAngle - bot.angle));
+            bot.angle += angleDiff * 0.1;
         } else {
             bot.changeTimer++;
-            if (bot.changeTimer > 50) {
-                targetAngle += (Math.random() - 0.5) * 1.5;
+            if (bot.changeTimer > 40) {
+                bot.angle += (Math.random() - 0.5) * 1.2;
                 bot.changeTimer = 0;
             }
         }
 
-        bot.angle = targetAngle;
         bot.x += Math.cos(bot.angle) * bot.speed;
         bot.y += Math.sin(bot.angle) * bot.speed;
 
-        if (bot.x < 50 || bot.x > WORLD_WIDTH - 50) bot.angle = Math.PI - bot.angle;
-        if (bot.y < 50 || bot.y > WORLD_HEIGHT - 50) bot.angle = -bot.angle;
+        // Rebote suave en los bordes para evitar que se queden atascados
+        if (bot.x < 80 || bot.x > WORLD_WIDTH - 80) bot.angle = Math.PI - bot.angle;
+        if (bot.y < 80 || bot.y > WORLD_HEIGHT - 80) bot.angle = -bot.angle;
 
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
