@@ -8,8 +8,11 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-const WORLD_WIDTH = 3500;
-const WORLD_HEIGHT = 3500;
+// ==========================================
+// [PUNTO 7] CAMBIO 1: MAPA DINÁMICO / EXTENSIBLE (DIMENSIONES EXPANDIBLES)
+// ==========================================
+let WORLD_WIDTH = 6000;
+let WORLD_HEIGHT = 6000;
 
 let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
@@ -24,7 +27,6 @@ const ENTRY_FEE = 2.00;
 let verificationInterval = null;
 let cashOutCheckInterval = null;
 
-// Límite de crecimiento: 20 veces el tamaño inicial de 30 = 600 segmentos
 const INITIAL_SEGMENTS = 30;
 const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20; 
 
@@ -48,7 +50,6 @@ async function initSupabase() {
 }
 initSupabase();
 
-// Obtener Tasa BCV Oficial
 async function syncBcvRate() {
     try {
         let response = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
@@ -65,7 +66,6 @@ async function syncBcvRate() {
 }
 syncBcvRate();
 
-// Sincronizar saldo de billetera
 async function syncUserWallet() {
     if (!currentUserId || currentUserId === "00000000-0000-0000-0000-000000000000") return;
     try {
@@ -88,7 +88,6 @@ async function syncUserWallet() {
 }
 setTimeout(syncUserWallet, 1500);
 
-// Espera activa para aprobación de recargas
 function startWaitingForApproval() {
     showFloatingMessage("⏳ Pago reportado. Esperando aprobación en Telegram...", "#eab308");
     
@@ -142,23 +141,36 @@ function startWaitingForApproval() {
     }, 3000);
 }
 
-// Inicialización de la Arena
+// ==========================================
+// [PUNTO 8] CAMBIO 2: SPAWN INTELIGENTE, SEGURO Y ESCUDO TEMPORAL
+// ==========================================
 function startArenaGame() {
     isGameActive = true;
     player.alive = true;
-    player.x = Math.random() * (WORLD_WIDTH - 400) + 200;
-    player.y = Math.random() * (WORLD_HEIGHT - 400) + 200;
+    player.isSpectator = false;
+    
+    // Ubicar zona activa cercana a bots pero a distancia segura
+    let spawnTarget = bots.length > 0 ? bots[Math.floor(Math.random() * bots.length)] : { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
+    player.x = Math.max(300, Math.min(WORLD_WIDTH - 300, spawnTarget.x + (Math.random() - 0.5) * 600));
+    player.y = Math.max(300, Math.min(WORLD_HEIGHT - 300, spawnTarget.y + (Math.random() - 0.5) * 600));
+    
     player.score = 0;
     player.maxSegments = INITIAL_SEGMENTS;
     player.trail = [];
 
+    // Escudo temporal de invulnerabilidad de 4 segundos
+    player.invincible = true;
+    setTimeout(() => {
+        player.invincible = false;
+        showFloatingMessage("🛡️ Escudo de entrada finalizado. ¡Estás en combate!", "#eab308");
+    }, 4000);
+
     let gallery = document.getElementById('skinGallery');
     if (gallery) gallery.style.display = 'none';
     
-    showFloatingMessage("¡Partida iniciada con éxito! ¡A sobrevivir!", "#10b981");
+    showFloatingMessage("🛡️ Spawn seguro activado. ¡Protección temporal de 4s!", "#10b981");
 }
 
-// Envío de reporte de pago
 async function submitPayment() {
     const refInput = document.getElementById('refInput');
     const ref = refInput ? refInput.value.trim() : "";
@@ -205,67 +217,66 @@ async function submitPayment() {
     }
 }
 
-// Solicitud de Retiro (Cash Out) con Sala de Espera
-window.attemptCashOut = async function() {
+// ==========================================
+// [PUNTO 10] CAMBIO 3: RETIRO DINÁMICO CON CONTADOR FLOTANTE DE 10 SEGUNDOS Y MODO ESPECTADOR
+// ==========================================
+window.attemptCashOut = function() {
     if (player.score < player.cashOutGoal) {
         showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
         return;
     }
 
-    isGameActive = false;
+    if (player.cashOutTimer) return;
+
+    // Transición a Espectador
     player.alive = false;
+    player.isSpectator = true;
+    let secondsLeft = 10;
 
-    let amountUSD = (player.score * 0.1).toFixed(2);
-    let rate = window.currentBcvRate || 36.50;
-    let amountVES = (amountUSD * rate).toFixed(2);
+    showFloatingMessage(`⏳ Retiro en proceso. Pasando a Modo Espectador (${secondsLeft}s)...`, "#eab308");
 
-    let modalTitle = document.getElementById('modalTitle');
-    if (modalTitle) modalTitle.innerText = "Procesando Retiro ($" + amountUSD + ")";
-
-    let modalBody = document.getElementById('modalBodyContent');
-    if (modalBody) {
-        modalBody.innerHTML = `
-            <div style="text-align: center; padding: 25px;">
-                <div style="font-size: 2.8rem; margin-bottom: 15px;">⏳</div>
-                <p style="color: #eab308; font-weight: bold; font-size: 1.2rem;">Cargando operación de retiro...</p>
-                <p style="font-size: 0.95rem; color: #94a3b8; margin-top: 10px;">Monto: <strong>$${amountUSD} USD</strong> (Bs. ${amountVES})</p>
-                <p style="font-size: 0.85rem; color: #64748b; margin-top: 8px;">En espera de la confirmación por parte del administrador...</p>
-            </div>
-        `;
-    }
-    document.getElementById('depositModal').style.display = 'flex';
-
-    try {
-        let response = await fetch(`${BACKEND_URL}/api/cashout/request`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: currentUserId,
-                amount_usd: amountUSD,
-                amount_ves: amountVES,
-                bcv_rate: rate
-            })
-        });
-
-        let result = await response.json();
-        if (response.ok && result.success) {
-            startWaitingForCashOutApproval(amountUSD);
+    player.cashOutInterval = setInterval(async () => {
+        secondsLeft--;
+        if (secondsLeft > 0) {
+            showFloatingMessage(`⏳ Procesando cobro en vivo... ${secondsLeft}s`, "#eab308");
         } else {
-            showFloatingMessage(result.error || "Error al solicitar retiro.", "#ef4444");
-            closeModal();
-            let gallery = document.getElementById('skinGallery');
-            if (gallery) gallery.style.display = 'block';
+            clearInterval(player.cashOutInterval);
+            player.cashOutInterval = null;
+
+            let amountUSD = (player.score * 0.1).toFixed(2);
+            let rate = window.currentBcvRate || 36.50;
+            let amountVES = (amountUSD * rate).toFixed(2);
+
+            try {
+                let response = await fetch(`${BACKEND_URL}/api/cashout/request`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: currentUserId,
+                        amount_usd: amountUSD,
+                        amount_ves: amountVES,
+                        bcv_rate: rate
+                    })
+                });
+
+                let result = await response.json();
+                if (response.ok && result.success) {
+                    startWaitingForCashOutApproval(amountUSD);
+                } else {
+                    showFloatingMessage(result.error || "Error al solicitar retiro.", "#ef4444");
+                    let gallery = document.getElementById('skinGallery');
+                    if (gallery) gallery.style.display = 'block';
+                }
+            } catch (err) {
+                console.error("Error al solicitar retiro:", err);
+                showFloatingMessage("Error de conexión al solicitar retiro.", "#ef4444");
+                let gallery = document.getElementById('skinGallery');
+                if (gallery) gallery.style.display = 'block';
+            }
         }
-    } catch (err) {
-        console.error("Error al solicitar retiro:", err);
-        showFloatingMessage("Error de conexión al solicitar retiro.", "#ef4444");
-        closeModal();
-        let gallery = document.getElementById('skinGallery');
-        if (gallery) gallery.style.display = 'block';
-    }
+    }, 1000);
 };
 
-// Sondeo continuo para detectar la respuesta por Reply en Telegram
 function startWaitingForCashOutApproval(amountUSD) {
     if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
 
@@ -286,10 +297,10 @@ function startWaitingForCashOutApproval(amountUSD) {
                     clearInterval(cashOutCheckInterval);
                     cashOutCheckInterval = null;
 
-                    closeModal();
-                    showFloatingMessage(`¡Retiro de $${amountUSD} USD procesado con éxito! Referencia: ${tx.reference_number}`, "#10b981");
+                    showFloatingMessage(`¡Retiro de $${amountUSD} USD procesado con éxito! Ref: ${tx.reference_number}`, "#10b981");
 
                     player.score = 0;
+                    player.isSpectator = false;
                     player.maxSegments = INITIAL_SEGMENTS;
 
                     let gallery = document.getElementById('skinGallery');
@@ -302,7 +313,32 @@ function startWaitingForCashOutApproval(amountUSD) {
     }, 4000);
 }
 
-// Catálogo de Skins
+// ==========================================
+// [PUNTO 9] CAMBIO 4: BOTÓN SALIR Y ABANDONO VOLUNTARIO (SOLTAR ACUMULADO)
+// ==========================================
+window.leaveGameVoluntarily = function() {
+    if (isGameActive && player.alive) {
+        if (player.score > 0) {
+            createAccumulatedCoinsFromPlayer(player.trail, player.score);
+            showFloatingMessage("💥 Abandonaste la partida. Tu dinero acumulado quedó en la arena.", "#ef4444");
+        } else {
+            showFloatingMessage("Saliste de la partida.", "#64748b");
+        }
+        player.alive = false;
+        isGameActive = false;
+        player.score = 0;
+        let gallery = document.getElementById('skinGallery');
+        if (gallery) gallery.style.display = 'block';
+    }
+};
+
+window.addEventListener('beforeunload', () => {
+    if (isGameActive && player.alive && player.score > 0) {
+        // En desconexión accidental sin botón salir, el acumulado no se pierde en servidor pero la partida actual reinicia a 0
+        player.score = 0;
+    }
+});
+
 const skinCatalog = {
     cyber_dragon: { name: "Digital Dragon", primaryColor: "#10b981", secondaryColor: "#065f46" },
     fire_scale: { name: "FireScale Killa", primaryColor: "#ef4444", secondaryColor: "#991b1b" },
@@ -330,11 +366,13 @@ let player = {
     speed: 7,
     trail: [],
     alive: false,
+    isSpectator: false,
     score: 0,
     name: "Tú (Jugador)",
     skin: skinCatalog.cyber_dragon,
     cashOutGoal: 50.0,
-    invincible: false
+    invincible: false,
+    cashOutInterval: null
 };
 
 window.selectSkin = function(skinKey) {
@@ -372,11 +410,13 @@ function spawnPellet() {
 
 let goldCoins = [];
 
-// Regla económica: Al morir un jugador real, suelta el 50% de su entrada ($1.00 USD en orbes de valor)
+// ==========================================
+// [PUNTO 2 Y 3] CAMBIO 5: REGLA ECONÓMICA DE ENTRADA ($1.00 USD) Y BOTÍN DIFERENCIADO
+// ==========================================
 function createGoldCoinsFromPlayerDeath(trail) {
-    let prizePool = 1.00; // 50% de la entrada de $2.00 USD
+    let prizePool = 1.00; // 50% de la entrada
     let coinsCount = 50;
-    let valuePerCoin = prizePool / coinsCount; // $0.02 USD por moneda de oro
+    let valuePerCoin = prizePool / coinsCount;
 
     for (let i = 0; i < coinsCount; i++) {
         let randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
@@ -390,7 +430,21 @@ function createGoldCoinsFromPlayerDeath(trail) {
     }
 }
 
-// Al morir un bot: SOLO suelta monedas de valor si acumuló capital matando a un usuario real; si no, solo puntos estándar
+function createAccumulatedCoinsFromPlayer(trail, totalAmount) {
+    let coinsCount = Math.max(10, Math.floor(totalAmount * 50));
+    let valuePerCoin = totalAmount / coinsCount;
+    for (let i = 0; i < coinsCount; i++) {
+        let randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
+        goldCoins.push({
+            x: randomSegment.x + (Math.random() - 0.5) * 60,
+            y: randomSegment.y + (Math.random() - 0.5) * 60,
+            radius: 6,
+            color: '#eab308',
+            value: valuePerCoin
+        });
+    }
+}
+
 function createCoinsOrPelletsFromBotDeath(trail, botScore) {
     if (botScore > 0) {
         let coinsCount = Math.max(10, Math.floor(botScore * 50));
@@ -406,7 +460,7 @@ function createCoinsOrPelletsFromBotDeath(trail, botScore) {
             });
         }
     } else {
-        // Ningún bot con valor 0 suelta dinero al morir, solo bolitas de comida estándar
+        // [PUNTO 2] Bots con $0.00 al morir NO sueltan monedas de dinero, solo puntos de crecimiento
         for (let i = 0; i < 15; i++) {
             let randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: 0, y: 0 };
             foodPellets.push({
@@ -432,6 +486,9 @@ for (let i = 0; i < 20; i++) {
     spawnBorderBot(botNamesList[i] || ("Bot_" + i), skinCatalog[randomSkinKey]);
 }
 
+// ==========================================
+// [PUNTO 6] CAMBIO 6: REAPARICIÓN DISCRETA E IMPERCEPTIBLE DE BOTS
+// ==========================================
 function spawnBorderBot(name, skin) {
     let edge = Math.floor(Math.random() * 4);
     let sx, sy, sAngle;
@@ -452,7 +509,7 @@ function spawnBorderBot(name, skin) {
         angle: sAngle,
         changeTimer: 0,
         trail: [],
-        score: 0, // Los bots inician estrictamente con valor 0.00
+        score: 0, // [PUNTO 2] Bots inician en $0.00
         alive: true
     });
 }
@@ -595,6 +652,10 @@ function gameLoop() {
         if (player.trail.length > player.maxSegments) player.trail.shift();
 
         camera.update(player.x, player.y);
+    } else if (player.isSpectator) {
+        // En modo espectador la cámara sigue al bot líder de la arena
+        let leaderBot = bots.length > 0 ? bots[0] : null;
+        if (leaderBot) camera.update(leaderBot.x, leaderBot.y);
     }
 
     ctx.save();
@@ -602,7 +663,6 @@ function gameLoop() {
 
     drawHexMap(ctx);
 
-    // Comida Pequeña
     for (let i = foodPellets.length - 1; i >= 0; i--) {
         let p = foodPellets[i];
         ctx.fillStyle = p.color;
@@ -617,7 +677,6 @@ function gameLoop() {
         }
     }
 
-    // Monedas / Orbes (Consumidas por Jugador y Bots)
     for (let i = goldCoins.length - 1; i >= 0; i--) {
         let coin = goldCoins[i];
         ctx.fillStyle = coin.color;
@@ -625,7 +684,6 @@ function gameLoop() {
 
         let coinEaten = false;
 
-        // Si el jugador se come la moneda
         if (player.alive && isGameActive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
             player.score += coin.value;
             if (player.maxSegments < MAX_SEGMENTS_LIMIT) {
@@ -635,7 +693,6 @@ function gameLoop() {
             continue;
         }
 
-        // Si un bot se come la moneda
         for (let bot of bots) {
             if (bot.alive && Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
                 bot.score += coin.value;
@@ -650,7 +707,9 @@ function gameLoop() {
         if (coinEaten) continue;
     }
 
-    // IA TÁCTICA DE LOS BOTS, EVALUACIÓN DE RIESGO Y COMBATE ENTRE BOTS CON AUTONOMÍA
+    // ==========================================
+    // [PUNTO 1, 4 Y 5] CAMBIO 7, 8 Y 9: AUTONOMÍA INDIVIDUAL, COMBATE CRUZADO Y EVALUACIÓN DE RIESGO
+    // ==========================================
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -659,7 +718,7 @@ function gameLoop() {
         let targetX = null;
         let targetY = null;
 
-        // Prioridad 1: Cazar al jugador si está cerca
+        // [PUNTO 1] Prioridad 1: Cazar al jugador si está cerca
         if (player.alive && isGameActive) {
             let dPlayer = Math.hypot(bot.x - player.x, bot.y - player.y);
             if (dPlayer < 550) {
@@ -670,15 +729,13 @@ function gameLoop() {
             }
         }
 
-        // Prioridad 2: Atacar a otros bots si no hay jugador cercano (con cálculo de supervivencia para evitar morir tontamente)
+        // [PUNTO 4] Prioridad 2: Combate cruzado entre bots con superviviencia calculada
         if (!targetX) {
             for (let otherBot of bots) {
                 if (otherBot !== bot && otherBot.alive) {
                     let dBot = Math.hypot(bot.x - otherBot.x, bot.y - otherBot.y);
                     if (dBot < 350 && dBot < closestDist) {
-                        // Comprobación de supervivencia: Si el otro bot es mucho más grande/largo, este bot decide huir o no arriesgarse
                         if (otherBot.maxSegments > bot.maxSegments * 1.3) {
-                            // Huir del bot más grande
                             let escapeAngle = Math.atan2(bot.y - otherBot.y, bot.x - otherBot.x);
                             bot.angle = escapeAngle;
                         } else {
@@ -691,13 +748,12 @@ function gameLoop() {
             }
         }
 
-        // Prioridad 3: Buscar monedas de valor con EVALUACIÓN DE RIESGO ESTRICTA (Anti-Acorralamiento)
+        // [PUNTO 5] Prioridad 3: Buscar oro con evaluación de riesgo (evita pozos acorralados por el jugador)
         if (!targetX) {
             for (let coin of goldCoins) {
                 let d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
                 if (d < 450 && d < closestDist) {
                     let isSafeToGrab = true;
-                    // Si el jugador real está cerca de las monedas (< 300px), el bot detecta que están custodiadas o acorraladas y las evita
                     if (player.alive && isGameActive) {
                         let distPlayerToCoin = Math.hypot(player.x - coin.x, player.y - coin.y);
                         if (distPlayerToCoin < 300) {
@@ -735,14 +791,14 @@ function gameLoop() {
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-        // 1. COLISIÓN DEL JUGADOR CONTRA UN BOT (EL JUGADOR MUERE, EL BOT TOMA EL VALOR DE LA ENTRADA = $1.00 USD)
+        // Colisión del Jugador contra Bot
         if (player.alive && isGameActive && !player.invincible) {
             for (let segment of bot.trail) {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
                     isGameActive = false;
                     
-                    bot.score += 1.00; // El bot adquiere valor real tras eliminar al usuario
+                    bot.score += 1.00;
                     bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
 
                     createGoldCoinsFromPlayerDeath(player.trail);
@@ -755,7 +811,7 @@ function gameLoop() {
             }
         }
 
-        // 2. COLISIÓN DE UN BOT CONTRA LA ESTELA DEL JUGADOR (EL BOT MUERE - Sin valor = solo puntos; Con valor = suelta monedas)
+        // Colisión del Bot contra Jugador
         if (player.alive && isGameActive) {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
@@ -765,13 +821,13 @@ function gameLoop() {
                     let deadName = bot.name;
                     let deadSkin = bot.skin;
                     bots.splice(bIndex, 1);
-                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000); // Reaparición discreta
+                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
                     break;
                 }
             }
         }
 
-        // 3. COMBATE TÁCTICO ENTRE BOTS
+        // Combate de Bots entre sí
         for (let otherBot of bots) {
             if (otherBot !== bot && otherBot.alive) {
                 for (let segment of otherBot.trail) {
@@ -779,7 +835,7 @@ function gameLoop() {
                         bot.alive = false;
                         
                         if (bot.score > 0) {
-                            otherBot.score += bot.score; // Absorbe el valor si tenía
+                            otherBot.score += bot.score;
                         }
                         otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 20);
 
@@ -788,7 +844,7 @@ function gameLoop() {
                         let deadName = bot.name;
                         let deadSkin = bot.skin;
                         bots.splice(bIndex, 1);
-                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000); // Reaparición silenciosa
+                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
                         break;
                     }
                 }
@@ -810,7 +866,6 @@ function gameLoop() {
 
     ctx.restore();
 
-    // Actualización visual de la barra de Cash Out
     let progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
     let barFill = document.getElementById('cashBarFill');
     if (barFill) barFill.style.width = progress + '%';
