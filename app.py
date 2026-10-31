@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import requests
 from flask import Flask, jsonify, request
@@ -168,7 +169,6 @@ def request_cashout():
     return jsonify({"error": str(e)}), 500
 
 
-# Endpoint Webhook para recibir mensajes (Reply del Admin) y botones de Telegram
 @app.route("/api/telegram/webhook", methods=["POST"])
 def telegram_webhook():
   data = request.json or {}
@@ -183,21 +183,18 @@ def telegram_webhook():
       reply_text = reply_to.get("text", "") or reply_to.get("caption", "")
       
       try:
-        import re
-        # Buscar directamente un UUID válido de Supabase en el mensaje original al que se hizo Reply
+        # Búsqueda por UUID en la plantilla del mensaje enviado por el bot
         uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', reply_text, re.IGNORECASE)
         payment_id = uuid_match.group(0) if uuid_match else None
 
         if payment_id:
-          print(f"DEBUG: UUID encontrado en el mensaje original: {payment_id}")
           tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
           tx = tx_resp.data
           
           if tx:
             current_status = tx.get("status")
-            print(f"DEBUG: Estado actual en Supabase: {current_status}")
             
-            # Si es un retiro pendiente, lo aprobamos guardando la referencia enviada por el admin
+            # Retiro Aprobado por Reply
             if current_status == "cashout_pending":
               supabase.table("payment_transactions").update({
                   "status": "paid",
@@ -212,7 +209,7 @@ def telegram_webhook():
                   "reply_to_message_id": msg.get("message_id")
               }, timeout=5)
 
-            # Si es una recarga pendiente
+            # Recarga Aprobada por Reply
             elif current_status == "pending":
               supabase.table("payment_transactions").update({
                   "status": "verified",
