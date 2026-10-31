@@ -168,6 +168,7 @@ def request_cashout():
     return jsonify({"error": str(e)}), 500
 
 
+# Endpoint Webhook para recibir mensajes (Reply del Admin) y botones de Telegram
 @app.route("/api/telegram/webhook", methods=["POST"])
 def telegram_webhook():
   data = request.json or {}
@@ -179,67 +180,70 @@ def telegram_webhook():
     reply_to = msg.get("reply_to_message")
 
     if reply_to and text:
-      reply_text = reply_to.get("text", "")
+      reply_text = reply_to.get("text", "") or reply_to.get("caption", "")
       
-      # Extracción flexible del ID de Transacción del mensaje al que se hizo reply
-      if "ID Transacción:" in reply_text or "Transacción:" in reply_text:
-        try:
-          import re
-          # Buscar UUID o string de transacción mediante expresión regular
-          match = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-zA-Z0-9_-]{10,})', reply_text.split("ID Transacción:")[-1])
-          payment_id = match.group(1) if match else None
+      try:
+        import re
+        # Buscar directamente un UUID válido de Supabase en el mensaje original al que se hizo Reply
+        uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', reply_text, re.IGNORECASE)
+        payment_id = uuid_match.group(0) if uuid_match else None
 
-          if payment_id:
-            tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
-            tx = tx_resp.data
-            if tx and tx.get("status") in ["pending", "cashout_pending"]:
-              current_status = tx.get("status")
-              
-              if current_status == "cashout_pending":
-                supabase.table("payment_transactions").update({
-                    "status": "paid",
-                    "reference_number": text
-                }).eq("id", payment_id).execute()
+        if payment_id:
+          print(f"DEBUG: UUID encontrado en el mensaje original: {payment_id}")
+          tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
+          tx = tx_resp.data
+          
+          if tx:
+            current_status = tx.get("status")
+            print(f"DEBUG: Estado actual en Supabase: {current_status}")
+            
+            # Si es un retiro pendiente, lo aprobamos guardando la referencia enviada por el admin
+            if current_status == "cashout_pending":
+              supabase.table("payment_transactions").update({
+                  "status": "paid",
+                  "reference_number": text
+              }).eq("id", payment_id).execute()
 
-                send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-                requests.post(send_url, json={
-                    "chat_id": chat_id,
-                    "text": f"✅ ¡Retiro aprobado y pagado con referencia: <code>{text}</code>!",
-                    "parse_mode": "HTML",
-                    "reply_to_message_id": msg.get("message_id")
-                }, timeout=5)
+              send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+              requests.post(send_url, json={
+                  "chat_id": chat_id,
+                  "text": f"✅ ¡Retiro aprobado y pagado con referencia: <code>{text}</code>!",
+                  "parse_mode": "HTML",
+                  "reply_to_message_id": msg.get("message_id")
+              }, timeout=5)
 
-              elif current_status == "pending":
-                supabase.table("payment_transactions").update({
-                    "status": "verified",
-                    "reference_number": text
-                }).eq("id", payment_id).execute()
+            # Si es una recarga pendiente
+            elif current_status == "pending":
+              supabase.table("payment_transactions").update({
+                  "status": "verified",
+                  "reference_number": text
+              }).eq("id", payment_id).execute()
 
-                user_id = tx["user_id"]
-                amount = float(tx["amount_usd"])
+              user_id = tx["user_id"]
+              amount = float(tx["amount_usd"])
 
-                wallet_resp = supabase.table("user_wallets").select("*").eq("user_id", user_id).execute()
-                if wallet_reg := wallet_resp.data:
-                  current_bal = float(wallet_reg[0]["balance_usd"])
-                  new_bal = current_bal + amount
-                  supabase.table("user_wallets").update({"balance_usd": new_bal}).eq("user_id", user_id).execute()
-                else:
-                  supabase.table("user_wallets").insert({
-                      "user_id": user_id,
-                      "balance_usd": amount,
-                      "total_earnings_usd": amount,
-                  }).execute()
+              wallet_resp = supabase.table("user_wallets").select("*").eq("user_id", user_id).execute()
+              if wallet_reg := wallet_resp.data:
+                current_bal = float(wallet_reg[0]["balance_usd"])
+                new_bal = current_bal + amount
+                supabase.table("user_wallets").update({"balance_usd": new_bal}).eq("user_id", user_id).execute()
+              else:
+                supabase.table("user_wallets").insert({
+                    "user_id": user_id,
+                    "balance_usd": amount,
+                    "total_earnings_usd": amount,
+                }).execute()
 
-                send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-                requests.post(send_url, json={
-                    "chat_id": chat_id,
-                    "text": f"✅ ¡Recarga aprobada y acreditada! Referencia: <code>{text}</code>",
-                    "parse_mode": "HTML",
-                    "reply_to_message_id": msg.get("message_id")
-                }, timeout=5)
+              send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+              requests.post(send_url, json={
+                  "chat_id": chat_id,
+                  "text": f"✅ ¡Recarga aprobada y acreditada! Referencia: <code>{text}</code>",
+                  "parse_mode": "HTML",
+                  "reply_to_message_id": msg.get("message_id")
+              }, timeout=5)
 
-        except Exception as e:
-          print(f"Error procesando reply en Telegram: {e}")
+      except Exception as e:
+        print(f"Error procesando reply en Telegram: {e}")
 
   elif "callback_query" in data:
     callback = data["callback_query"]
