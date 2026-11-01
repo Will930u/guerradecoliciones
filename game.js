@@ -605,7 +605,7 @@ if (!canvas || !ctx) {
     });
 
     // =========================================================================
-    // MOTOR DE IA AGRESIVA Y ANTIBUCLE MEJORADO
+    // MOTOR DE IA ANTIBUCLE Y CAZA AGRESIVA
     // =========================================================================
 
     function getAdvancedBotRisk(bot, playerRef, botList) {
@@ -613,8 +613,8 @@ if (!canvas || !ctx) {
         let nearestDangerAngle = null;
 
         const wallDistMin = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
-        if (wallDistMin < 220) {
-            riskScore += (220 - wallDistMin) * 0.05; 
+        if (wallDistMin < 200) {
+            riskScore += (200 - wallDistMin) * 0.06; 
             if (wallDistMin === bot.x) nearestDangerAngle = Math.PI;
             else if (wallDistMin === WORLD_WIDTH - bot.x) nearestDangerAngle = 0;
             else if (wallDistMin === bot.y) nearestDangerAngle = -Math.PI / 2;
@@ -624,14 +624,14 @@ if (!canvas || !ctx) {
         if (playerRef.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distHead = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
             if (distHead < bot.safetyMargin) {
-                riskScore += (bot.safetyMargin - distHead) * 0.04;
+                riskScore += (bot.safetyMargin - distHead) * 0.05;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(playerRef.y - bot.y, playerRef.x - bot.x);
             }
             for (let i = 0; i < playerRef.trail.length - 10; i += 4) {
                 const seg = playerRef.trail[i];
                 const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
                 if (distSeg < bot.safetyMargin * 0.7) {
-                    riskScore += 2.5;
+                    riskScore += 3.0;
                     nearestDangerAngle = Math.atan2(seg.y - bot.y, seg.x - bot.x);
                     break;
                 }
@@ -641,8 +641,8 @@ if (!canvas || !ctx) {
         for (const other of botList) {
             if (other === bot || !other.alive) continue;
             const distBotHead = Math.hypot(other.x - bot.x, other.y - bot.y);
-            if (distBotHead < bot.safetyMargin * 0.7) {
-                riskScore += 1.5;
+            if (distBotHead < bot.safetyMargin * 0.6) {
+                riskScore += 2.0;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(other.y - bot.y, other.x - bot.x);
             }
         }
@@ -660,16 +660,14 @@ if (!canvas || !ctx) {
         let bestObjective = null;
         let highestScore = -999;
 
-        // 1. BÚSQUEDA AGRESIVA DE OTROS BOTS (Caza e intercepción)
+        // 1. CAZA Y COMBATE AGRESIVO ENTRE BOTS
         for (const other of allBots) {
             if (other === bot || !other.alive) continue;
             const distToOther = Math.hypot(other.x - bot.x, other.y - bot.y);
-            // Si el enemigo está a distancia de combate y el bot tiene suficiente agresividad
-            if (distToOther < 600 && bot.aggression > 0.3) {
-                // Calcular posición de intercepción adelantada a la cabeza del rival
-                const interceptX = other.x + Math.cos(other.angle || 0) * 80;
-                const interceptY = other.y + Math.sin(other.angle || 0) * 80;
-                const score = 350 - distToOther + (other.score * 20);
+            if (distToOther < 700) {
+                const interceptX = other.x + Math.cos(other.angle || 0) * 100;
+                const interceptY = other.y + Math.sin(other.angle || 0) * 100;
+                const score = 400 - distToOther + (other.score * 25);
                 if (score > highestScore) {
                     highestScore = score;
                     bestObjective = { x: interceptX, y: interceptY, type: 'attack_bot' };
@@ -677,12 +675,12 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 2. BÚSQUEDA DE MONEDAS Y COFRES DE VALOR
+        // 2. MONEDAS Y COFRES DE VALOR
         if (!bestObjective || highestScore < 150) {
             for (const coin of goldCoins) {
                 const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
                 if (dist < 800) {
-                    let score = 280 - dist + (coin.value * 50);
+                    let score = 300 - dist + (coin.value * 60);
                     if (score > highestScore) {
                         highestScore = score;
                         bestObjective = { x: coin.x, y: coin.y, type: 'coin' };
@@ -691,12 +689,12 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 3. BÚSQUEDA DE PELLETS DE COMIDA
+        // 3. PUNTOS DE CRECIMIENTO (PELLETS) - Búsqueda cercana eficiente
         if (!bestObjective || highestScore < 100) {
             for (const pellet of foodPellets) {
                 const dist = Math.hypot(pellet.x - bot.x, pellet.y - bot.y);
-                if (dist < 500) {
-                    const score = 180 - dist;
+                if (dist < 450) {
+                    const score = 220 - dist;
                     if (score > highestScore) {
                         highestScore = score;
                         bestObjective = { x: pellet.x, y: pellet.y, type: 'food' };
@@ -705,26 +703,12 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 4. ATAQUE AL JUGADOR HUMANO SI ESTÁ CERCA
-        if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0)) && bot.aggression > 0.4) {
-            const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
-            if (distPlayer < 450 && riskScore < 2.0) {
-                const interceptPlayerX = player.x + Math.cos(player.trail.length > 0 ? player.trail[player.trail.length-1].angle : 0) * 90;
-                const interceptPlayerY = player.y + Math.sin(player.trail.length > 0 ? player.trail[player.trail.length-1].angle : 0) * 90;
-                let scorePlayer = 320 - distPlayer;
-                if (scorePlayer > highestScore) {
-                    highestScore = scorePlayer;
-                    bestObjective = { x: interceptPlayerX, y: interceptPlayerY, type: 'attack_pass' };
-                }
-            }
-        }
-
         if (bestObjective) return bestObjective;
 
-        // Exploración frontal continua si no hay objetivos
+        // Si no hay nada cerca, avanzar recto explorando el mapa
         return {
-            x: bot.x + Math.cos(bot.angle) * 400,
-            y: bot.y + Math.sin(bot.angle) * 400,
+            x: bot.x + Math.cos(bot.angle) * 500,
+            y: bot.y + Math.sin(bot.angle) * 500,
             type: 'wander'
         };
     }
@@ -749,10 +733,10 @@ if (!canvas || !ctx) {
             trail: [],
             score: 0,
             alive: true,
-            aggression: 0.6 + Math.random() * 0.4, // Mayor agresividad base
-            safetyMargin: 140 + Math.random() * 60,
-            riskTolerance: 3.5 + Math.random() * 1.5,
-            orbitTimer: 0 // Temporizador anti-bucle
+            aggression: 0.7 + Math.random() * 0.3,
+            safetyMargin: 150 + Math.random() * 50,
+            riskTolerance: 4.0 + Math.random() * 1.0,
+            orbitTimer: 0
         });
     }
 
@@ -929,7 +913,7 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
-        // CONSUMO DE PELLETS DE COMIDA (JUGADOR Y BOTS)
+        // CONSUMO EFICIENTE DE PELLETS
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
@@ -1024,7 +1008,7 @@ if (!canvas || !ctx) {
         }
 
         // =====================================================================
-        // BUCLE DE BOTS CON IA AGRESIVA Y ANTI-BUCLE DE GIRO
+        // BUCLE DE BOTS CON IA ANTIBUCLE Y RUPTURA DE ÓRBITA
         // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
@@ -1040,19 +1024,19 @@ if (!canvas || !ctx) {
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             }
 
-            // Mecanismo anti-bucle: si da muchas vueltas seguidas, romper órbita forzando línea recta
+            // Mecanismo estricto anti-bucle de giro en círculos
             const angleDiff = normalizeAngle(targetAngle - bot.angle);
-            if (Math.abs(angleDiff) > 2.5) {
+            if (Math.abs(angleDiff) > 2.2) {
                 bot.orbitTimer = (bot.orbitTimer || 0) + 1;
-                if (bot.orbitTimer > 60) {
-                    targetAngle += (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+                if (bot.orbitTimer > 45) { // Si gira más de 45 frames sin decidirse, rompe el círculo
+                    targetAngle += (Math.random() > 0.5 ? Math.PI : -Math.PI);
                     bot.orbitTimer = 0;
                 }
             } else {
                 bot.orbitTimer = Math.max(0, (bot.orbitTimer || 0) - 1);
             }
 
-            bot.angle += normalizeAngle(targetAngle - bot.angle) * 0.12;
+            bot.angle += normalizeAngle(targetAngle - bot.angle) * 0.14;
             bot.angle = normalizeAngle(bot.angle);
 
             bot.x += Math.cos(bot.angle) * bot.speed;
@@ -1069,7 +1053,7 @@ if (!canvas || !ctx) {
 
             const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
 
-            // 1. COLISIÓN: Cabeza de Bot vs Cuerpo del Jugador
+            // 1. Cabeza de Bot vs Cuerpo del Jugador
             if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
                 for (let i = 0; i < player.trail.length - 10; i++) {
                     const seg = player.trail[i];
@@ -1087,7 +1071,7 @@ if (!canvas || !ctx) {
             }
             if (!bot.alive) continue;
 
-            // 2. COLISIÓN: Cabeza de Bot vs Cuerpo de OTROS BOTS
+            // 2. Cabeza de Bot vs Cuerpo de OTROS BOTS
             let botDiedByOther = false;
             for (let otherIdx = 0; otherIdx < bots.length; otherIdx++) {
                 if (otherIdx === bIndex) continue;
@@ -1113,7 +1097,7 @@ if (!canvas || !ctx) {
             }
             if (botDiedByOther) continue;
 
-            // 3. COLISIÓN: Cabeza del Jugador vs Cuerpo de este Bot
+            // 3. Cabeza del Jugador vs Cuerpo de este Bot
             if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
                 for (let i = 0; i < bot.trail.length - 10; i++) {
                     const seg = bot.trail[i];
