@@ -495,15 +495,124 @@ if (!canvas || !ctx) {
 
     const botNamesList = ['ViperKilla', 'ShadowHunter', 'AlphaOmega', 'NeonVenom', 'ToxicSerpent', 'ApexPredator', 'CyberCobra', 'GoldenScale', 'DragonsLair', 'TitanPython', 'GatorBite', 'HyperSpeed', 'ZeroTolerance', 'PhantomSnake', 'DarkRider', 'FlameThrower', 'VorticeXX', 'SteelFang', 'MegaSlayer', 'ChaosReaper'];
 
+    function normalizeAngle(angle) {
+        while (angle > Math.PI) angle -= Math.PI * 2;
+        while (angle < -Math.PI) angle += Math.PI * 2;
+        return angle;
+    }
+
+    function getBotRisk(bot, playerRef, botList) {
+        const distToPlayer = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
+        let risk = 0;
+
+        if (distToPlayer < 190) risk += 2.2;
+        if (distToPlayer < 120) risk += 3.5;
+
+        const aim = Math.atan2(playerRef.y - bot.y, playerRef.x - bot.x);
+        const diff = Math.abs(normalizeAngle(aim - bot.angle));
+        if (diff < 0.45 && distToPlayer < 210) risk += 2.5;
+
+        for (const other of botList) {
+            if (other === bot || !other.alive) continue;
+            const d = Math.hypot(other.x - bot.x, other.y - bot.y);
+            if (d < 150) risk += 1.9;
+            if (d < 90) risk += 2.8;
+        }
+
+        const wallMargin = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
+        if (wallMargin < 100) risk += 1.2;
+
+        return risk;
+    }
+
+    function chooseBotObjective(bot) {
+        const danger = getBotRisk(bot, player, bots);
+
+        const realTargets = [];
+        if (player.alive) {
+            const dist = Math.hypot(player.x - bot.x, player.y - bot.y);
+            const dangerBias = dist < 220 ? 1.5 : 0.6;
+            realTargets.push({
+                x: player.x,
+                y: player.y,
+                type: 'player',
+                score: (dist < 260 ? 2.5 : 1.4) * dangerBias,
+                danger
+            });
+        }
+
+        const coinTargets = goldCoins
+            .filter(c => c && Number.isFinite(c.x) && Number.isFinite(c.y))
+            .map(coin => {
+                const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
+                const valueWeight = Math.min(coin.value || 0.1, 5) * 1.8;
+                const riskScore = getBotRisk({ ...bot, x: coin.x, y: coin.y }, player, bots);
+                return {
+                    x: coin.x,
+                    y: coin.y,
+                    type: 'coin',
+                    score: valueWeight + (dist < 180 ? 1.5 : 0.5) - riskScore * 0.55,
+                    danger: riskScore
+                };
+            })
+            .sort((a, b) => b.score - a.score);
+
+        const pelletTargets = foodPellets
+            .filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+            .map(pellet => {
+                const dist = Math.hypot(pellet.x - bot.x, pellet.y - bot.y);
+                const riskScore = getBotRisk({ ...bot, x: pellet.x, y: pellet.y }, player, bots);
+                return {
+                    x: pellet.x,
+                    y: pellet.y,
+                    type: 'food',
+                    score: (dist < 180 ? 1.8 : 1.0) + 0.8 - riskScore * 0.75,
+                    danger: riskScore
+                };
+            })
+            .sort((a, b) => b.score - a.score);
+
+        const candidates = [...realTargets, ...coinTargets, ...pelletTargets];
+        const safeCandidates = candidates.filter(target => (target.danger || 0) < 5.5 || target.type === 'player');
+        const best = (safeCandidates.length ? safeCandidates : candidates).sort((a, b) => b.score - a.score)[0];
+
+        if (!best) {
+            return {
+                x: bot.x + Math.cos(bot.angle + (Math.random() - 0.5) * 2.2) * 200,
+                y: bot.y + Math.sin(bot.angle + (Math.random() - 0.5) * 2.2) * 200,
+                type: 'wander',
+                score: 0,
+                danger: 0
+            };
+        }
+
+        return best;
+    }
+
     function spawnBorderBot(name, skin) {
-        let edge = Math.floor(Math.random() * 4);
+        const edge = Math.floor(Math.random() * 4);
         let sx, sy, sAngle;
         if (edge === 0) { sx = 50; sy = Math.random() * WORLD_HEIGHT; sAngle = 0; }
         else if (edge === 1) { sx = WORLD_WIDTH - 50; sy = Math.random() * WORLD_HEIGHT; sAngle = Math.PI; }
         else if (edge === 2) { sx = Math.random() * WORLD_WIDTH; sy = 50; sAngle = Math.PI / 2; }
         else { sx = Math.random() * WORLD_WIDTH; sy = WORLD_HEIGHT - 50; sAngle = -Math.PI / 2; }
 
-        bots.push({ name, skin, x: sx, y: sy, radius: 18, maxSegments: INITIAL_SEGMENTS, speed: 5, angle: sAngle, changeTimer: 0, trail: [], score: 0, alive: true });
+        bots.push({
+            name,
+            skin,
+            x: sx,
+            y: sy,
+            radius: 18,
+            maxSegments: INITIAL_SEGMENTS,
+            speed: 4.4 + Math.random() * 1.5,
+            angle: sAngle,
+            changeTimer: 0,
+            trail: [],
+            score: 0,
+            alive: true,
+            aggression: 0.42 + Math.random() * 0.4,
+            targetMode: 'autonomous'
+        });
     }
 
     for (let i = 0; i < 20; i++) {
@@ -705,56 +814,53 @@ if (!canvas || !ctx) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
 
-            let closestDist = 9999;
-            let targetX = null;
-            let targetY = null;
+            const objective = chooseBotObjective(bot);
+            let desiredAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
+            const risk = getBotRisk(bot, player, bots);
 
-            for (const coin of goldCoins) {
-                const d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
-                if (d < 600 && d < closestDist) {
-                    closestDist = d;
-                    targetX = coin.x;
-                    targetY = coin.y;
-                }
+            if (risk > 4.8) {
+                const desiredOffset = (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 2.2);
+                desiredAngle = normalizeAngle(desiredAngle + desiredOffset);
             }
 
-            if (!targetX) {
-                for (const pellet of foodPellets) {
-                    const d = Math.hypot(bot.x - pellet.x, bot.y - pellet.y);
-                    if (d < 300 && d < closestDist) {
-                        closestDist = d;
-                        targetX = pellet.x;
-                        targetY = pellet.y;
-                    }
-                }
+            const wallPadding = 110;
+            const wallRisk = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
+            if (wallRisk < wallPadding) {
+                const wallAngle = Math.atan2(WORLD_HEIGHT / 2 - bot.y, WORLD_WIDTH / 2 - bot.x);
+                desiredAngle = normalizeAngle(wallAngle + (Math.random() - 0.5));
             }
 
-            if (targetX !== null && targetY !== null) {
-                const desiredAngle = Math.atan2(targetY - bot.y, targetX - bot.x);
-                const angleDiff = Math.atan2(Math.sin(desiredAngle - bot.angle), Math.cos(desiredAngle - bot.angle));
-                bot.angle += angleDiff * 0.15;
-                bot.changeTimer = 0;
-            } else {
-                bot.changeTimer++;
-                if (bot.changeTimer > 30) {
-                    bot.angle += (Math.random() - 0.5) * 1.5;
-                    bot.changeTimer = 0;
-                }
-            }
+            const angleDiff = normalizeAngle(desiredAngle - bot.angle);
+            bot.angle += angleDiff * 0.18;
+            bot.angle = normalizeAngle(bot.angle);
 
-            bot.x += Math.cos(bot.angle) * bot.speed;
-            bot.y += Math.sin(bot.angle) * bot.speed;
-            if (bot.x < 100) { bot.x = 100; bot.angle = 0 + (Math.random() - 0.5) * 0.5; }
-            if (bot.x > WORLD_WIDTH - 100) { bot.x = WORLD_WIDTH - 100; bot.angle = Math.PI + (Math.random() - 0.5) * 0.5; }
-            if (bot.y < 100) { bot.y = 100; bot.angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5; }
-            if (bot.y > WORLD_HEIGHT - 100) { bot.y = WORLD_HEIGHT - 100; bot.angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5; }
+            const chaseMode = objective.type === 'player' && risk < 5.2;
+            const speedBoost = chaseMode ? 1.35 : 1.0;
+            bot.x += Math.cos(bot.angle) * bot.speed * speedBoost;
+            bot.y += Math.sin(bot.angle) * bot.speed * speedBoost;
+
+            bot.x = Math.max(30, Math.min(WORLD_WIDTH - 30, bot.x));
+            bot.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, bot.y));
 
             bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
             if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
+            const distToPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
+            const playerLineOfSight = Math.abs(normalizeAngle(Math.atan2(player.y - bot.y, player.x - bot.x) - bot.angle)) < 0.55;
+            const botWantsStrike = objective.type === 'player' && distToPlayer < 220 && risk < 5.0 && playerLineOfSight && bot.aggression > 0.55;
+
             if (player.alive && isGameActive && !player.invincible && !(isAdminUser && adminInvisible)) {
+                const dangerHit = distToPlayer < player.radius + bot.radius + 10;
+                const shouldAvoidCollision = dangerHit && (risk > 4.2 || !botWantsStrike);
+
+                if (botWantsStrike && !shouldAvoidCollision) {
+                    const offset = (Math.random() > 0.5 ? 1 : -1) * 0.38;
+                    bot.angle = normalizeAngle(bot.angle + offset);
+                }
+
                 for (const segment of bot.trail) {
-                    if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
+                    const hit = Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.8;
+                    if (hit && !shouldAvoidCollision) {
                         player.alive = false;
                         isGameActive = false;
                         bot.score += 1;
