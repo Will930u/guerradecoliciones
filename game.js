@@ -97,7 +97,6 @@ if (!canvas || !ctx) {
 
     function ensureAdminControls() {
         if (document.getElementById('adminGiftValue')) return;
-
         const panelBody = document.getElementById('adminPanelBody');
         if (!panelBody) return;
 
@@ -123,6 +122,10 @@ if (!canvas || !ctx) {
             <div id="adminPanelBody" style="margin-top: 10px; display: block;">
                 <button onclick="adminDropGift('chest')" style="width: 100%; padding: 7px; margin-bottom: 5px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🎁 Cofre</button>
                 <button onclick="adminDropGift('star')" style="width: 100%; padding: 7px; margin-bottom: 8px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⭐ Estrella</button>
+                <div style="display: flex; gap: 5px; margin-bottom: 8px;">
+                    <button onclick="adminAddBot()" style="flex: 1; padding: 7px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">➕ Sumar Bot</button>
+                    <button onclick="adminRemoveBot()" style="flex: 1; padding: 7px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">➖ Quitar Bot</button>
+                </div>
                 <button id="adminFreeCamBtn" onclick="toggleAdminFreeCam()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🗺️ Navegación Libre: OFF</button>
                 <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">👻 Modo Fantasma: OFF</button>
                 <button onclick="adminSpawnDirect()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⚡ Spawn instantáneo</button>
@@ -212,6 +215,24 @@ if (!canvas || !ctx) {
         showFloatingMessage(adminInvisible ? '👻 Modo Fantasma activo.' : '👻 Modo Fantasma inactivo.', adminInvisible ? '#ef4444' : '#10b981');
     };
 
+    window.adminAddBot = function() {
+        if (!isAdminUser) return;
+        const randomSkinKey = skinKeys[Math.floor(Math.random() * skinKeys.length)];
+        const botName = botNamesList[Math.floor(Math.random() * botNamesList.length)] + '_' + Math.floor(Math.random() * 99);
+        spawnBorderBot(botName, skinCatalog[randomSkinKey]);
+        showFloatingMessage(`➕ Bot añadido (${bots.length} totales).`, '#3b82f6');
+    };
+
+    window.adminRemoveBot = function() {
+        if (!isAdminUser) return;
+        if (bots.length > 0) {
+            bots.pop();
+            showFloatingMessage(`➖ Bot eliminado (${bots.length} restantes).`, '#ef4444');
+        } else {
+            showFloatingMessage('No hay bots para eliminar.', '#eab308');
+        }
+    };
+
     window.adminDropGift = function(type) {
         if (!isAdminUser) return;
         const giftInput = document.getElementById('adminGiftValue');
@@ -275,7 +296,7 @@ if (!canvas || !ctx) {
                 if (wallet && parseFloat(wallet.balance_usd) >= ENTRY_FEE) {
                     clearInterval(verificationInterval);
                     verificationInterval = null;
-                    showFloatingMessage('¡Pago aprobado! Entrando...', '#10b981');
+                    showFloatingMessage('¡Pago approved! Entrando...', '#10b981');
                     closeModal();
                     const newBalance = parseFloat(wallet.balance_usd) - ENTRY_FEE;
                     await supabaseClient.from('user_wallets').update({ balance_usd: newBalance }).eq('user_id', currentUserId);
@@ -501,92 +522,130 @@ if (!canvas || !ctx) {
         return angle;
     }
 
-    function getBotRisk(bot, playerRef, botList) {
-        const distToPlayer = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
-        let risk = 0;
+    // =========================================================================
+    // MOTOR DE INTELIGENCIA ARTIFICIAL DE BOTS AVANZADO (MULTICAPA Y TÁCTICO)
+    // =========================================================================
 
-        if (distToPlayer < 190) risk += 2.2;
-        if (distToPlayer < 120) risk += 3.5;
+    // Cálculo avanzado de nivel de riesgo para los bots (Prioridad 1 y 2)
+    function getAdvancedBotRisk(bot, playerRef, botList) {
+        let riskScore = 0;
+        let nearestDangerAngle = null;
 
-        const aim = Math.atan2(playerRef.y - bot.y, playerRef.x - bot.x);
-        const diff = Math.abs(normalizeAngle(aim - bot.angle));
-        if (diff < 0.45 && distToPlayer < 210) risk += 2.5;
+        // 1. Evaluación de riesgo por proximidad a Paredes
+        const wallDistMin = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
+        if (wallDistMin < 180) {
+            riskScore += (180 - wallDistMin) * 0.08; 
+            if (wallDistMin === bot.x) nearestDangerAngle = Math.PI;
+            else if (wallDistMin === WORLD_WIDTH - bot.x) nearestDangerAngle = 0;
+            else if (wallDistMin === bot.y) nearestDangerAngle = -Math.PI / 2;
+            else nearestDangerAngle = Math.PI / 2;
+        }
 
+        // 2. Evaluación de riesgo frente al Jugador humano (cuerpo y cabeza)
+        if (playerRef.alive && !(isAdminUser && adminInvisible)) {
+            const distHead = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
+            if (distHead < bot.safetyMargin) {
+                riskScore += (bot.safetyMargin - distHead) * 0.05;
+                if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(playerRef.y - bot.y, playerRef.x - bot.x);
+            }
+            // Riesgo por colisión con el rastro/cuerpo del jugador
+            for (let i = 0; i < playerRef.trail.length; i += 3) {
+                const seg = playerRef.trail[i];
+                const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
+                if (distSeg < bot.safetyMargin * 0.75) {
+                    riskScore += 3.5;
+                    nearestDangerAngle = Math.atan2(seg.y - bot.y, seg.x - bot.x);
+                    break;
+                }
+            }
+        }
+
+        // 3. Evaluación de riesgo frente a otros Bots (cabezas y rastros)
         for (const other of botList) {
             if (other === bot || !other.alive) continue;
-            const d = Math.hypot(other.x - bot.x, other.y - bot.y);
-            if (d < 150) risk += 1.9;
-            if (d < 90) risk += 2.8;
+            const distBotHead = Math.hypot(other.x - bot.x, other.y - bot.y);
+            if (distBotHead < bot.safetyMargin * 0.8) {
+                riskScore += 2.0;
+                if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(other.y - bot.y, other.x - bot.x);
+            }
+            for (let i = 0; i < other.trail.length; i += 4) {
+                const seg = other.trail[i];
+                const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
+                if (distSeg < bot.safetyMargin * 0.6) {
+                    riskScore += 3.0;
+                    nearestDangerAngle = Math.atan2(seg.y - bot.y, seg.x - bot.x);
+                    break;
+                }
+            }
         }
 
-        const wallMargin = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
-        if (wallMargin < 100) risk += 1.2;
-
-        return risk;
+        return { riskScore, nearestDangerAngle };
     }
 
+    // Selección jerárquica de objetivos de bots (Prioridad 3 y 4)
     function chooseBotObjective(bot) {
-        const danger = getBotRisk(bot, player, bots);
+        const { riskScore } = getAdvancedBotRisk(bot, player, bots);
 
-        const realTargets = [];
-        if (player.alive) {
-            const dist = Math.hypot(player.x - bot.x, player.y - bot.y);
-            const dangerBias = dist < 220 ? 1.5 : 0.6;
-            realTargets.push({
-                x: player.x,
-                y: player.y,
-                type: 'player',
-                score: (dist < 260 ? 2.5 : 1.4) * dangerBias,
-                danger
-            });
+        // Si el riesgo supera la tolerancia personal del bot, entra en MODO EVASIÓN ESTRICTO
+        if (riskScore > bot.riskTolerance) {
+            return { type: 'evade', score: 999 };
         }
 
-        const coinTargets = goldCoins
-            .filter(c => c && Number.isFinite(c.x) && Number.isFinite(c.y))
-            .map(coin => {
-                const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
-                const valueWeight = Math.min(coin.value || 0.1, 5) * 1.8;
-                const riskScore = getBotRisk({ ...bot, x: coin.x, y: coin.y }, player, bots);
-                return {
-                    x: coin.x,
-                    y: coin.y,
-                    type: 'coin',
-                    score: valueWeight + (dist < 180 ? 1.5 : 0.5) - riskScore * 0.55,
-                    danger: riskScore
-                };
-            })
-            .sort((a, b) => b.score - a.score);
+        let bestObjective = null;
+        let highestScore = -999;
 
-        const pelletTargets = foodPellets
-            .filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y))
-            .map(pellet => {
+        // Evaluamos Monedas (Prioridad 3)
+        for (const coin of goldCoins) {
+            const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
+            if (dist < 700) {
+                // Bonus extra a la moneda si el jugador está cerca para ganársela de forma segura
+                const distPlayerToCoin = player.alive ? Math.hypot(coin.x - player.x, coin.y - player.y) : 999;
+                let score = 250 - dist + (coin.value * 40);
+                if (distPlayerToCoin < 350) score += 80;
+
+                if (score > highestScore) {
+                    highestScore = score;
+                    bestObjective = { x: coin.x, y: coin.y, type: 'coin' };
+                }
+            }
+        }
+
+        // Evaluamos Comida Puntos (Prioridad 3.5)
+        if (!bestObjective || highestScore < 100) {
+            for (const pellet of foodPellets) {
                 const dist = Math.hypot(pellet.x - bot.x, pellet.y - bot.y);
-                const riskScore = getBotRisk({ ...bot, x: pellet.x, y: pellet.y }, player, bots);
-                return {
-                    x: pellet.x,
-                    y: pellet.y,
-                    type: 'food',
-                    score: (dist < 180 ? 1.8 : 1.0) + 0.8 - riskScore * 0.75,
-                    danger: riskScore
-                };
-            })
-            .sort((a, b) => b.score - a.score);
-
-        const candidates = [...realTargets, ...coinTargets, ...pelletTargets];
-        const safeCandidates = candidates.filter(target => (target.danger || 0) < 5.5 || target.type === 'player');
-        const best = (safeCandidates.length ? safeCandidates : candidates).sort((a, b) => b.score - a.score)[0];
-
-        if (!best) {
-            return {
-                x: bot.x + Math.cos(bot.angle + (Math.random() - 0.5) * 2.2) * 200,
-                y: bot.y + Math.sin(bot.angle + (Math.random() - 0.5) * 2.2) * 200,
-                type: 'wander',
-                score: 0,
-                danger: 0
-            };
+                if (dist < 400) {
+                    const score = 150 - dist;
+                    if (score > highestScore) {
+                        highestScore = score;
+                        bestObjective = { x: pellet.x, y: pellet.y, type: 'food' };
+                    }
+                }
+            }
         }
 
-        return best;
+        // Evaluamos Ataque Táctico al Jugador (Prioridad 4 - Solo si hay ventaja y agresividad alta)
+        if (player.alive && !(isAdminUser && adminInvisible) && bot.aggression > 0.6) {
+            const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
+            const playerAngle = Math.atan2(player.y - bot.y, player.x - bot.x);
+            const angleDiff = Math.abs(normalizeAngle(playerAngle - bot.angle));
+
+            // Ataque quirúrgico de paso rápido sin lanzarse de frente a suicidarse
+            if (distPlayer < 320 && angleDiff < 0.7 && riskScore < 2.0) {
+                const attackTargetX = player.x + Math.cos(player.angle || 0) * 80;
+                const attackTargetY = player.y + Math.sin(player.angle || 0) * 80;
+                return { x: attackTargetX, y: attackTargetY, type: 'attack_pass' };
+            }
+        }
+
+        if (bestObjective) return bestObjective;
+
+        // Vuelo libre de navegación si no hay nada en rango
+        return {
+            x: bot.x + Math.cos(bot.angle) * 300,
+            y: bot.y + Math.sin(bot.angle) * 300,
+            type: 'wander'
+        };
     }
 
     function spawnBorderBot(name, skin) {
@@ -604,14 +663,16 @@ if (!canvas || !ctx) {
             y: sy,
             radius: 18,
             maxSegments: INITIAL_SEGMENTS,
-            speed: 4.4 + Math.random() * 1.5,
+            speed: 4.5 + Math.random() * 1.2,
             angle: sAngle,
             changeTimer: 0,
             trail: [],
             score: 0,
             alive: true,
-            aggression: 0.42 + Math.random() * 0.4,
-            targetMode: 'autonomous'
+            // Personalidad autónoma única por bot
+            aggression: 0.3 + Math.random() * 0.5,
+            safetyMargin: 180 + Math.random() * 100,
+            riskTolerance: 2.5 + Math.random() * 2.0
         });
     }
 
@@ -810,57 +871,50 @@ if (!canvas || !ctx) {
             if (coinEaten) continue;
         }
 
+        // BUCLE PRINCIPAL DE BOTS (EJECUCIÓN DE IA INTEGRADA)
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
 
+            const { riskScore, nearestDangerAngle } = getAdvancedBotRisk(bot, player, bots);
             const objective = chooseBotObjective(bot);
-            let desiredAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
-            const risk = getBotRisk(bot, player, bots);
 
-            if (risk > 4.8) {
-                const desiredOffset = (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 2.2);
-                desiredAngle = normalizeAngle(desiredAngle + desiredOffset);
+            let targetAngle = bot.angle;
+
+            // PRIORIDAD 1 & 2: EVASIÓN Y SUPERVIVENCIA
+            if (objective.type === 'evade' && nearestDangerAngle !== null) {
+                // Escapar en dirección opuesta a la amenaza
+                targetAngle = normalizeAngle(nearestDangerAngle + Math.PI);
+            } else if (objective.type === 'attack_pass') {
+                // PRIORIDAD 4: ATAQUE QUIRÚRGICO AL PASO (RÁPIDO Y SEGURO)
+                targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
+            } else {
+                // PRIORIDAD 3: IR POR MONEDAS O COMIDA PUNTOS
+                targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             }
 
-            const wallPadding = 110;
-            const wallRisk = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
-            if (wallRisk < wallPadding) {
-                const wallAngle = Math.atan2(WORLD_HEIGHT / 2 - bot.y, WORLD_WIDTH / 2 - bot.x);
-                desiredAngle = normalizeAngle(wallAngle + (Math.random() - 0.5));
-            }
-
-            const angleDiff = normalizeAngle(desiredAngle - bot.angle);
-            bot.angle += angleDiff * 0.18;
+            // Suavizado de giro continuo y sin tirones
+            const angleDiff = normalizeAngle(targetAngle - bot.angle);
+            bot.angle += angleDiff * 0.16;
             bot.angle = normalizeAngle(bot.angle);
 
-            const chaseMode = objective.type === 'player' && risk < 5.2;
-            const speedBoost = chaseMode ? 1.35 : 1.0;
-            bot.x += Math.cos(bot.angle) * bot.speed * speedBoost;
-            bot.y += Math.sin(bot.angle) * bot.speed * speedBoost;
+            // Control de velocidad adaptativo
+            const currentSpeed = (objective.type === 'attack_pass') ? bot.speed * 1.25 : bot.speed;
+            bot.x += Math.cos(bot.angle) * currentSpeed;
+            bot.y += Math.sin(bot.angle) * currentSpeed;
 
-            bot.x = Math.max(30, Math.min(WORLD_WIDTH - 30, bot.x));
-            bot.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, bot.y));
+            // Limites estrictos dentro del mapa
+            bot.x = Math.max(40, Math.min(WORLD_WIDTH - 40, bot.x));
+            bot.y = Math.max(40, Math.min(WORLD_HEIGHT - 40, bot.y));
 
             bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
             if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-            const distToPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
-            const playerLineOfSight = Math.abs(normalizeAngle(Math.atan2(player.y - bot.y, player.x - bot.x) - bot.angle)) < 0.55;
-            const botWantsStrike = objective.type === 'player' && distToPlayer < 220 && risk < 5.0 && playerLineOfSight && bot.aggression > 0.55;
-
+            // VERIFICACIÓN DE COLISIONES JUGADOR vs BOT
             if (player.alive && isGameActive && !player.invincible && !(isAdminUser && adminInvisible)) {
-                const dangerHit = distToPlayer < player.radius + bot.radius + 10;
-                const shouldAvoidCollision = dangerHit && (risk > 4.2 || !botWantsStrike);
-
-                if (botWantsStrike && !shouldAvoidCollision) {
-                    const offset = (Math.random() > 0.5 ? 1 : -1) * 0.38;
-                    bot.angle = normalizeAngle(bot.angle + offset);
-                }
-
                 for (const segment of bot.trail) {
-                    const hit = Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.8;
-                    if (hit && !shouldAvoidCollision) {
+                    const hit = Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.75;
+                    if (hit) {
                         player.alive = false;
                         isGameActive = false;
                         bot.score += 1;
@@ -874,6 +928,7 @@ if (!canvas || !ctx) {
                 }
             }
 
+            // VERIFICACIÓN DE ELIMINACIÓN DE BOT POR EL JUGADOR
             if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
                 for (const segment of player.trail) {
                     if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
