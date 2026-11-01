@@ -1,6 +1,7 @@
 import os
 import re
 import time
+
 import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -14,350 +15,406 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID")
-# ==========================================
-# [NUEVO] CAMBIO 1: Cargar el ID del Administrador desde las variables de entorno de Render
-# ==========================================
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+supabase: Client | None = None
+if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    except Exception as exc:
+        print(f"Error creando cliente de Supabase: {exc}")
+
+
+def require_supabase():
+    if supabase is None:
+        return (
+            False,
+            jsonify({
+                "error": "Servicio de base de datos no disponible. Revisa SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY."
+            }),
+            503,
+        )
+    return True, None, None
 
 
 def send_telegram_payment_notification(payment_id, amount_usd, amount_ves, reference_number, bcv_rate, phone_number):
-  if not TELEGRAM_BOT_TOKEN or not TELEGRAM_ADMIN_CHAT_ID:
-    return
-  url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-  
-  msg = (
-      f"<b>💳 Nuevo Pago Móvil Reportado (${amount_usd})</b>\n\n"
-      f"• Referencia: <code>#{reference_number}</code>\n"
-      f"• Monto VES: Bs. {amount_ves}\n"
-      f"• Tasa BCV: {bcv_rate}\n"
-      f"• Teléfono: {phone_number}\n\n"
-      f"🆔 <b>ID Transacción:</b> <code>{payment_id}</code>"
-  )
-  
-  keyboard = {
-      "inline_keyboard": [
-          [
-              {"text": "✅ Aprobar", "callback_data": f"approve_{payment_id}"},
-              {"text": "❌ Rechazar", "callback_data": f"reject_{payment_id}"}
-          ]
-      ]
-  }
-  
-  payload = {
-      "chat_id": TELEGRAM_ADMIN_CHAT_ID,
-      "text": msg,
-      "parse_mode": "HTML",
-      "reply_markup": keyboard
-  }
-  
-  try:
-    requests.post(url, json=payload, timeout=5)
-  except Exception as e:
-    print(f"Error enviando notificación interactiva a Telegram: {e}")
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_ADMIN_CHAT_ID:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    msg = (
+        f"<b>💳 Nuevo Pago Móvil Reportado (${amount_usd})</b>\n\n"
+        f"• Referencia: <code>#{reference_number}</code>\n"
+        f"• Monto VES: Bs. {amount_ves}\n"
+        f"• Tasa BCV: {bcv_rate}\n"
+        f"• Teléfono: {phone_number}\n\n"
+        f"🆔 <b>ID Transacción:</b> <code>{payment_id}</code>"
+    )
+
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "✅ Aprobar", "callback_data": f"approve_{payment_id}"},
+                {"text": "❌ Rechazar", "callback_data": f"reject_{payment_id}"},
+            ]
+        ]
+    }
+
+    payload = {
+        "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+        "text": msg,
+        "parse_mode": "HTML",
+        "reply_markup": keyboard,
+    }
+
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except Exception as exc:
+        print(f"Error enviando notificación interactiva a Telegram: {exc}")
 
 
 @app.route("/")
 def home():
-  return jsonify({"status": "Viper Royale Backend Activo 🚀", "ok": True}), 200
+    return jsonify({"status": "Viper Royale Backend Activo 🚀", "ok": True}), 200
 
 
 @app.route("/api/config", methods=["GET"])
 def get_config():
-  # ==========================================
-  # [NUEVO] CAMBIO 2: Incluir admin_user_id en la respuesta de configuración para el frontend
-  # ==========================================
-  return jsonify({
-      "supabase_url": SUPABASE_URL,
-      "supabase_anon_key": SUPABASE_ANON_KEY,
-      "admin_user_id": ADMIN_USER_ID,
-  }), 200
+    return jsonify({
+        "supabase_url": SUPABASE_URL,
+        "supabase_anon_key": SUPABASE_ANON_KEY,
+        "admin_user_id": ADMIN_USER_ID,
+    }), 200
 
 
 @app.route("/api/payment/report", methods=["POST"])
 def report_payment():
-  data = request.json or {}
-  user_id = data.get("user_id")
-  amount_usd = data.get("amount_usd", 2.00)
-  bcv_rate = data.get("bcv_rate")
-  amount_ves = data.get("amount_ves")
-  reference_number = data.get("reference_number")
-  phone_number = data.get("phone_number")
+    ok, error_response, status_code = require_supabase()
+    if not ok:
+        return error_response, status_code
 
-  if not reference_number or not user_id:
-    return jsonify({"error": "Faltan datos obligatorios (user_id, ref)"}), 400
+    data = request.json or {}
+    user_id = data.get("user_id")
+    amount_usd = data.get("amount_usd", 2.00)
+    bcv_rate = data.get("bcv_rate")
+    amount_ves = data.get("amount_ves")
+    reference_number = data.get("reference_number")
+    phone_number = data.get("phone_number")
 
-  try:
-    response = (
-        supabase.table("payment_transactions")
-        .insert({
-            "user_id": user_id,
-            "amount_usd": amount_usd,
-            "bcv_rate": bcv_rate,
-            "amount_ves": amount_ves,
-            "reference_number": reference_number,
-            "phone_number": phone_number,
-            "status": "pending",
-        })
-        .execute()
-    )
+    if not reference_number or not user_id:
+        return jsonify({"error": "Faltan datos obligatorios (user_id, ref)"}), 400
 
-    tx_data = response.data
-    if tx_data and len(tx_data) > 0:
-      payment_id = tx_data[0].get("id")
-      send_telegram_payment_notification(
-          payment_id, amount_usd, amount_ves, reference_number, bcv_rate, phone_number
-      )
+    try:
+        response = (
+            supabase.table("payment_transactions")
+            .insert(
+                {
+                    "user_id": user_id,
+                    "amount_usd": amount_usd,
+                    "bcv_rate": bcv_rate,
+                    "amount_ves": amount_ves,
+                    "reference_number": reference_number,
+                    "phone_number": phone_number,
+                    "status": "pending",
+                }
+            )
+            .execute()
+        )
 
-    return jsonify({"success": True, "message": "Comprobante reportado con éxito", "data": response.data}), 200
-  except Exception as e:
-    return jsonify({"error": str(e)}), 500
+        tx_data = response.data
+        if tx_data and len(tx_data) > 0:
+            payment_id = tx_data[0].get("id")
+            send_telegram_payment_notification(
+                payment_id, amount_usd, amount_ves, reference_number, bcv_rate, phone_number
+            )
+
+        return jsonify({
+            "success": True,
+            "message": "Comprobante reportado con éxito",
+            "data": response.data,
+        }), 200
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/cashout/request", methods=["POST"])
 def request_cashout():
-  data = request.json or {}
-  user_id = data.get("user_id")
-  amount_usd = data.get("amount_usd")
-  amount_ves = data.get("amount_ves")
-  bcv_rate = data.get("bcv_rate")
+    ok, error_response, status_code = require_supabase()
+    if not ok:
+        return error_response, status_code
 
-  if not user_id or not amount_usd:
-    return jsonify({"error": "Faltan datos obligatorios para el retiro"}), 400
+    data = request.json or {}
+    user_id = data.get("user_id")
+    amount_usd = data.get("amount_usd")
+    amount_ves = data.get("amount_ves")
+    bcv_rate = data.get("bcv_rate")
 
-  try:
-    user_phone = "0412-1234567"
+    if not user_id or not amount_usd:
+        return jsonify({"error": "Faltan datos obligatorios para el retiro"}), 400
+
     try:
-        profile_resp = supabase.table("users").select("*").eq("id", user_id).execute()
-        if profile_resp.data and len(profile_resp.data) > 0:
-            user_phone = profile_resp.data[0].get("phone", "0412-1234567")
-    except Exception:
-        pass
+        user_phone = "0412-1234567"
+        try:
+            profile_resp = supabase.table("users").select("*").eq("id", user_id).execute()
+            if profile_resp.data and len(profile_resp.data) > 0:
+                user_phone = profile_resp.data[0].get("phone", "0412-1234567")
+        except Exception:
+            pass
 
-    tx_resp = (
-        supabase.table("payment_transactions")
-        .insert({
-            "user_id": user_id,
-            "amount_usd": amount_usd,
-            "bcv_rate": bcv_rate,
-            "amount_ves": amount_ves,
-            "reference_number": f"CASHOUT_{user_id[:6]}_{int(time.time())}",
-            "phone_number": user_phone,
-            "status": "cashout_pending",
-        })
-        .execute()
-    )
+        tx_resp = (
+            supabase.table("payment_transactions")
+            .insert(
+                {
+                    "user_id": user_id,
+                    "amount_usd": amount_usd,
+                    "bcv_rate": bcv_rate,
+                    "amount_ves": amount_ves,
+                    "reference_number": f"CASHOUT_{user_id[:6]}_{int(time.time())}",
+                    "phone_number": user_phone,
+                    "status": "cashout_pending",
+                }
+            )
+            .execute()
+        )
 
-    tx_data = tx_resp.data
-    if not tx_data or len(tx_data) == 0:
-      return jsonify({"error": "No se pudo registrar la solicitud de retiro"}), 500
+        tx_data = tx_resp.data
+        if not tx_data or len(tx_data) == 0:
+            return jsonify({"error": "No se pudo registrar la solicitud de retiro"}), 500
 
-    payment_id = tx_data[0].get("id")
+        payment_id = tx_data[0].get("id")
 
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID:
-      url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-      msg = (
-          f"💸 <b>¡Solicitud de Retiro (Cash Out)!</b>\n\n"
-          f"👤 <b>Usuario ID:</b> <code>{user_id}</code>\n"
-          f"💵 <b>Monto USD:</b> ${amount_usd}\n"
-          f"🇻🇪 <b>Monto VES:</b> Bs. {amount_ves}\n"
-          f"📱 <b>Teléfono / Datos de Pago:</b> <code>{user_phone}</code>\n\n"
-          f"🆔 <b>ID Transacción:</b> <code>{payment_id}</code>"
-      )
-      keyboard = {
-          "inline_keyboard": [
-              [
-                  {"text": "✅ Pagado / Aprobar", "callback_data": f"cashoutpaid_{payment_id}"},
-                  {"text": "❌ Rechazar", "callback_data": f"cashoutreject_{payment_id}"}
-              ]
-          ]
-      }
-      payload = {
-          "chat_id": TELEGRAM_ADMIN_CHAT_ID,
-          "text": msg,
-          "parse_mode": "HTML",
-          "reply_markup": keyboard
-      }
-      requests.post(url, json=payload, timeout=5)
+        if TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            msg = (
+                f"💸 <b>¡Solicitud de Retiro (Cash Out)!</b>\n\n"
+                f"👤 <b>Usuario ID:</b> <code>{user_id}</code>\n"
+                f"💵 <b>Monto USD:</b> ${amount_usd}\n"
+                f"🇻🇪 <b>Monto VES:</b> Bs. {amount_ves}\n"
+                f"📱 <b>Teléfono / Datos de Pago:</b> <code>{user_phone}</code>\n\n"
+                f"🆔 <b>ID Transacción:</b> <code>{payment_id}</code>"
+            )
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "✅ Pagado / Aprobar", "callback_data": f"cashoutpaid_{payment_id}"},
+                        {"text": "❌ Rechazar", "callback_data": f"cashoutreject_{payment_id}"},
+                    ]
+                ]
+            }
+            payload = {
+                "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+                "text": msg,
+                "parse_mode": "HTML",
+                "reply_markup": keyboard,
+            }
+            requests.post(url, json=payload, timeout=5)
 
-    return jsonify({"success": True, "message": "Solicitud de retiro enviada con éxito"}), 200
-  except Exception as e:
-    return jsonify({"error": str(e)}), 500
+        return jsonify({"success": True, "message": "Solicitud de retiro enviada con éxito"}), 200
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/telegram/webhook", methods=["POST"])
 def telegram_webhook():
-  data = request.json or {}
-  
-  if "message" in data:
-    msg = data["message"]
-    chat_id = msg.get("chat", {}).get("id")
-    text = msg.get("text", "").strip()
-    reply_to = msg.get("reply_to_message")
+    ok, error_response, status_code = require_supabase()
+    if not ok:
+        return error_response, status_code
 
-    if reply_to and text:
-      reply_text = reply_to.get("text", "") or reply_to.get("caption", "")
-      
-      try:
-        payment_id = None
-        for line in reply_text.split("\n"):
-          if "ID Transacción:" in line or "Transacción:" in line:
-            clean_line = re.sub(r'<[^>]+>', '', line)
-            parts = clean_line.split(":")
-            if len(parts) > 1:
-              payment_id = parts[1].strip()
-              break
+    data = request.json or {}
 
-        if payment_id:
-          tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
-          tx = tx_resp.data
-          
-          if tx:
-            current_status = tx.get("status")
-            
-            if current_status == "cashout_pending":
-              supabase.table("payment_transactions").update({
-                  "status": "paid",
-                  "reference_number": text
-              }).eq("id", payment_id).execute()
+    if "message" in data:
+        msg = data["message"]
+        chat_id = msg.get("chat", {}).get("id")
+        text = msg.get("text", "").strip()
+        reply_to = msg.get("reply_to_message")
 
-              send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-              requests.post(send_url, json={
-                  "chat_id": chat_id,
-                  "text": f"✅ ¡Retiro aprobado y pagado con referencia: <code>{text}</code>!",
-                  "parse_mode": "HTML",
-                  "reply_to_message_id": msg.get("message_id")
-              }, timeout=5)
+        if reply_to and text:
+            reply_text = reply_to.get("text", "") or reply_to.get("caption", "")
 
-            elif current_status == "pending":
-              supabase.table("payment_transactions").update({
-                  "status": "verified",
-                  "reference_number": text
-              }).eq("id", payment_id).execute()
+            try:
+                payment_id = None
+                for line in reply_text.split("\n"):
+                    if "ID Transacción:" in line or "Transacción:" in line:
+                        clean_line = re.sub(r"<[^>]+>", "", line)
+                        parts = clean_line.split(":")
+                        if len(parts) > 1:
+                            payment_id = parts[1].strip()
+                            break
 
-              user_id = tx["user_id"]
-              amount = float(tx["amount_usd"])
+                if payment_id:
+                    tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
+                    tx = tx_resp.data
 
-              wallet_resp = supabase.table("user_wallets").select("*").eq("user_id", user_id).execute()
-              if wallet_reg := wallet_resp.data:
-                current_bal = float(wallet_reg[0]["balance_usd"])
-                new_bal = current_bal + amount
-                supabase.table("user_wallets").update({"balance_usd": new_bal}).eq("user_id", user_id).execute()
-              else:
-                supabase.table("user_wallets").insert({
-                    "user_id": user_id,
-                    "balance_usd": amount,
-                    "total_earnings_usd": amount,
-                }).execute()
+                    if tx:
+                        current_status = tx.get("status")
 
-              send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-              requests.post(send_url, json={
-                  "chat_id": chat_id,
-                  "text": f"✅ ¡Recarga aprobada y acreditada! Referencia: <code>{text}</code>",
-                  "parse_mode": "HTML",
-                  "reply_to_message_id": msg.get("message_id")
-              }, timeout=5)
+                        if current_status == "cashout_pending":
+                            supabase.table("payment_transactions").update({
+                                "status": "paid",
+                                "reference_number": text,
+                            }).eq("id", payment_id).execute()
 
-      except Exception as e:
-        print(f"Error procesando reply en Telegram: {e}")
+                            send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                            requests.post(
+                                send_url,
+                                json={
+                                    "chat_id": chat_id,
+                                    "text": f"✅ ¡Retiro aprobado y pagado con referencia: <code>{text}</code>!",
+                                    "parse_mode": "HTML",
+                                    "reply_to_message_id": msg.get("message_id"),
+                                },
+                                timeout=5,
+                            )
+                        elif current_status == "pending":
+                            supabase.table("payment_transactions").update({
+                                "status": "verified",
+                                "reference_number": text,
+                            }).eq("id", payment_id).execute()
 
-  elif "callback_query" in data:
-    callback = data["callback_query"]
-    callback_data = callback.get("data")
-    message = callback.get("message", {})
-    message_id = message.get("message_id")
-    chat_id = message.get("chat", {}).get("id")
-    callback_query_id = callback.get("id")
+                            user_id = tx["user_id"]
+                            amount = float(tx["amount_usd"])
 
-    if callback_data and "_" in callback_data:
-      prefix, payment_id = callback_data.split("_", 1)
-      try:
-        tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
-        tx = tx_resp.data
-        if tx:
-          current_status = tx.get("status")
-          
-          if prefix == "approve" and current_status == "pending":
-            supabase.table("payment_transactions").update({"status": "verified"}).eq("id", payment_id).execute()
-            
-            user_id = tx["user_id"]
-            amount = float(tx["amount_usd"])
-            wallet_resp = supabase.table("user_wallets").select("*").eq("user_id", user_id).execute()
-            if wallet_reg := wallet_resp.data:
-              current_bal = float(wallet_reg[0]["balance_usd"])
-              new_bal = current_bal + amount
-              supabase.table("user_wallets").update({"balance_usd": new_bal}).eq("user_id", user_id).execute()
-            else:
-              supabase.table("user_wallets").insert({
-                  "user_id": user_id,
-                  "balance_usd": amount,
-                  "total_earnings_usd": amount,
-              }).execute()
+                            wallet_resp = supabase.table("user_wallets").select("*").eq("user_id", user_id).execute()
+                            if wallet_reg := wallet_resp.data:
+                                current_bal = float(wallet_reg[0]["balance_usd"])
+                                new_bal = current_bal + amount
+                                supabase.table("user_wallets").update({"balance_usd": new_bal}).eq("user_id", user_id).execute()
+                            else:
+                                supabase.table("user_wallets").insert({
+                                    "user_id": user_id,
+                                    "balance_usd": amount,
+                                    "total_earnings_usd": amount,
+                                }).execute()
 
-            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "¡Pago aprobado y acreditado!"}, timeout=5)
+                            send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                            requests.post(
+                                send_url,
+                                json={
+                                    "chat_id": chat_id,
+                                    "text": f"✅ ¡Recarga aprobada y acreditada! Referencia: <code>{text}</code>",
+                                    "parse_mode": "HTML",
+                                    "reply_to_message_id": msg.get("message_id"),
+                                },
+                                timeout=5,
+                            )
+            except Exception as exc:
+                print(f"Error procesando reply en Telegram: {exc}")
 
-            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
-            original_text = message.get("text", "Pago Móvil Reportado")
-            requests.post(edit_url, json={
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": original_text + "\n\n<b>✅ ESTADO: APROBADO Y ACREDITADO</b>",
-                "parse_mode": "HTML"
-            }, timeout=5)
+    elif "callback_query" in data:
+        callback = data["callback_query"]
+        callback_data = callback.get("data")
+        message = callback.get("message", {})
+        message_id = message.get("message_id")
+        chat_id = message.get("chat", {}).get("id")
+        callback_query_id = callback.get("id")
 
-          elif prefix == "reject" and current_status == "pending":
-            supabase.table("payment_transactions").update({"status": "rejected"}).eq("id", payment_id).execute()
-            
-            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "Pago rechazado."}, timeout=5)
+        if callback_data and "_" in callback_data:
+            prefix, payment_id = callback_data.split("_", 1)
+            try:
+                tx_resp = supabase.table("payment_transactions").select("*").eq("id", payment_id).single().execute()
+                tx = tx_resp.data
+                if tx:
+                    current_status = tx.get("status")
 
-            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
-            original_text = message.get("text", "Pago Móvil Reportado")
-            requests.post(edit_url, json={
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": original_text + "\n\n<b>❌ ESTADO: RECHAZADO</b>",
-                "parse_mode": "HTML"
-            }, timeout=5)
+                    if prefix == "approve" and current_status == "pending":
+                        supabase.table("payment_transactions").update({"status": "verified"}).eq("id", payment_id).execute()
 
-          elif prefix == "cashoutpaid" and current_status == "cashout_pending":
-            supabase.table("payment_transactions").update({"status": "paid"}).eq("id", payment_id).execute()
-            
-            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "¡Retiro marcado como pagado!"}, timeout=5)
+                        user_id = tx["user_id"]
+                        amount = float(tx["amount_usd"])
+                        wallet_resp = supabase.table("user_wallets").select("*").eq("user_id", user_id).execute()
+                        if wallet_reg := wallet_resp.data:
+                            current_bal = float(wallet_reg[0]["balance_usd"])
+                            new_bal = current_bal + amount
+                            supabase.table("user_wallets").update({"balance_usd": new_bal}).eq("user_id", user_id).execute()
+                        else:
+                            supabase.table("user_wallets").insert({
+                                "user_id": user_id,
+                                "balance_usd": amount,
+                                "total_earnings_usd": amount,
+                            }).execute()
 
-            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
-            original_text = message.get("text", "Solicitud de Retiro")
-            requests.post(edit_url, json={
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": original_text + "\n\n<b>✅ ESTADO: RETIRO PAGADO CON ÉXITO</b>",
-                "parse_mode": "HTML"
-            }, timeout=5)
+                        answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+                        requests.post(
+                            answer_url,
+                            json={"callback_query_id": callback_query_id, "text": "¡Pago aprobado y acreditado!"},
+                            timeout=5,
+                        )
 
-          elif prefix == "cashoutreject" and current_status == "cashout_pending":
-            supabase.table("payment_transactions").update({"status": "cashout_rejected"}).eq("id", payment_id).execute()
-            
-            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-            requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "Retiro rechazado."}, timeout=5)
+                        edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+                        original_text = message.get("text", "Pago Móvil Reportado")
+                        requests.post(
+                            edit_url,
+                            json={
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "text": original_text + "\n\n<b>✅ ESTADO: APROBADO Y ACREDITADO</b>",
+                                "parse_mode": "HTML",
+                            },
+                            timeout=5,
+                        )
 
-            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
-            original_text = message.get("text", "Solicitud de Retiro")
-            requests.post(edit_url, json={
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": original_text + "\n\n<b>❌ ESTADO: RETIRO RECHAZADO</b>",
-                "parse_mode": "HTML"
-            }, timeout=5)
+                    elif prefix == "reject" and current_status == "pending":
+                        supabase.table("payment_transactions").update({"status": "rejected"}).eq("id", payment_id).execute()
 
-      except Exception as e:
-        print(f"Error en callback: {e}")
+                        answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+                        requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "Pago rechazado."}, timeout=5)
 
-  return jsonify({"status": "ok"}), 200
+                        edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+                        original_text = message.get("text", "Pago Móvil Reportado")
+                        requests.post(
+                            edit_url,
+                            json={
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "text": original_text + "\n\n<b>❌ ESTADO: RECHAZADO</b>",
+                                "parse_mode": "HTML",
+                            },
+                            timeout=5,
+                        )
+
+                    elif prefix == "cashoutpaid" and current_status == "cashout_pending":
+                        supabase.table("payment_transactions").update({"status": "paid"}).eq("id", payment_id).execute()
+
+                        answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+                        requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "¡Retiro marcado como pagado!"}, timeout=5)
+
+                        edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+                        original_text = message.get("text", "Solicitud de Retiro")
+                        requests.post(
+                            edit_url,
+                            json={
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "text": original_text + "\n\n<b>✅ ESTADO: RETIRO PAGADO CON ÉXITO</b>",
+                                "parse_mode": "HTML",
+                            },
+                            timeout=5,
+                        )
+
+                    elif prefix == "cashoutreject" and current_status == "cashout_pending":
+                        supabase.table("payment_transactions").update({"status": "cashout_rejected"}).eq("id", payment_id).execute()
+
+                        answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+                        requests.post(answer_url, json={"callback_query_id": callback_query_id, "text": "Retiro rechazado."}, timeout=5)
+
+                        edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+                        original_text = message.get("text", "Solicitud de Retiro")
+                        requests.post(
+                            edit_url,
+                            json={
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "text": original_text + "\n\n<b>❌ ESTADO: RETIRO RECHAZADO</b>",
+                                "parse_mode": "HTML",
+                            },
+                            timeout=5,
+                        )
+            except Exception as exc:
+                print(f"Error en callback: {exc}")
+
+    return jsonify({"status": "ok"}), 200
 
 
 if __name__ == "__main__":
-  port = int(os.getenv("PORT", 5000))
-  app.run(host="0.0.0.0", port=port)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
