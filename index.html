@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>War of the Coalitions</title>
     <link rel="stylesheet" href="style.css">
-    <!-- SDK Oficial de Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         .btn-danger {
@@ -19,8 +18,6 @@
     </style>
 </head>
 <body>
-
-    <!-- HUD Superior / Marcadores -->
     <div id="hud">
         <div class="hud-card">
             <div>Saldo: <span id="userBalance" class="balance-val">$0.00 USD</span></div>
@@ -29,20 +26,18 @@
         <div class="hud-card">
             <button class="btn-action" onclick="openModal()">💳 Recargar ($2)</button>
             <button class="btn-action btn-gold" onclick="alert('Tienda de Bots')">🤖 Tienda Bot</button>
-            <button class="btn-action btn-danger" onclick="exitGame()">🚪 Salir</button>
+            <button class="btn-action btn-danger" onclick="window.exitGame && window.exitGame()">🚪 Salir</button>
         </div>
     </div>
 
-    <!-- Barra Superior de Cash Out Dinámico (Botón inicialmente desactivado) -->
     <div id="cashOutHUD">
         <span style="font-size: 0.85rem; font-weight: bold; color: #eab308;">Cash Out</span>
         <div class="cash-bar-container">
             <div class="cash-bar-fill" id="cashBarFill"></div>
         </div>
-        <button class="btn-cashout" id="cashOutBtn" onclick="attemptCashOut()" disabled style="opacity: 0.5; cursor: not-allowed; background: #64748b; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; font-weight: bold;">Retirar</button>
+        <button class="btn-cashout" id="cashOutBtn" onclick="attemptCashOut()" disabled style="opacity: 0.5; cursor: not-allowed; background: #64748b; color: #fff; border: none; padding: 4px 12px;">Retiro</button>
     </div>
 
-    <!-- Panel Lateral de Selección de Skins (Galería) -->
     <div id="skinGallery">
         <div class="gallery-title">Skins y Estilos</div>
         <div class="skin-grid">
@@ -65,15 +60,12 @@
         </div>
     </div>
 
-    <!-- NOTIFICACIÓN FLOTANTE -->
-    <div id="floatingNotification" style="position: fixed; top: 90px; left: 50%; transform: translateX(-50%); background: rgba(16, 185, 129, 0.95); color: #fff; padding: 10px 24px; border-radius: 20px; font-weight: bold; font-size: 0.95rem; z-index: 99; pointer-events: none; opacity: 0; transition: opacity 0.3s ease; box-shadow: 0 4px 20px rgba(0,0,0,0.6); text-align: center;">
+    <div id="floatingNotification" style="position: fixed; top: 90px; left: 50%; transform: translateX(-50%); background: rgba(16, 185, 129, 0.95); color: #fff; padding: 10px 24px; border-radius: 999px; box-shadow: 0 8px 22px rgba(0,0,0,0.25); display: block; opacity: 1; z-index: 2000; font-weight: bold;">
         Aviso del juego
     </div>
 
-    <!-- Canvas de la Arena de Juego -->
     <canvas id="gameCanvas"></canvas>
 
-    <!-- Ventana Flotante / Modal de Pago Móvil con contenedor dinámico -->
     <div class="modal-overlay" id="depositModal">
         <div class="modal-box">
             <div class="modal-header">
@@ -96,22 +88,20 @@
         </div>
     </div>
 
-    <!-- Script de control de salida -->
     <script>
-        function exitGame() {
-            const isInGame = typeof isGameActive !== 'undefined' ? isGameActive : false;
+        window.exitGame = function exitGame() {
+            const isInGame = typeof isGameActive !== 'undefined' ? Boolean(isGameActive) : false;
             if (isInGame) {
                 const confirmExit = confirm("⚠️ ¡Estás en plena partida! Si sales ahora, perderás la inversión de tu entrada actual ($2.00 USD). ¿Deseas salir?");
                 if (!confirmExit) return;
-                if (typeof forfeitMatch === 'function') {
-                    forfeitMatch();
+                if (typeof window.forfeitMatch === 'function') {
+                    window.forfeitMatch();
                 }
             }
-            window.location.href = "login.html";
-        }
+            window.location.href = 'login.html';
+        };
     </script>
 
-    <!-- Script principal del juego -->
     <script src="game.js"></script>
 </body>
 </html>
