@@ -80,6 +80,7 @@ if (!canvas || !ctx) {
         invisibilityTimer: 0,
         hasDestructionPower: false,
         powerTimer: 0,
+        magnetTimer: 0,
         growthPointsEaten: 0
     };
 
@@ -194,7 +195,8 @@ if (!canvas || !ctx) {
                 <div style="font-size: 0.75rem; color: #38bdf8; margin: 4px 0; font-weight: bold;">Cajas Especiales:</div>
                 <button onclick="adminDropSpecialBox('speed')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #0ea5e9; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">⚡ Caja Rapidez</button>
                 <button onclick="adminDropSpecialBox('invisibility')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">👻 Caja Invisibilidad</button>
-                <button onclick="adminDropSpecialBox('power')" style="width: 100%; padding: 6px; margin-bottom: 8px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">💥 Caja Poder Destructor</button>
+                <button onclick="adminDropSpecialBox('power')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">💥 Caja Poder Destructor</button>
+                <button onclick="adminDropSpecialBox('magnet')" style="width: 100%; padding: 6px; margin-bottom: 8px; background: #ec4899; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🧲 Caja Imán</button>
 
                 <div style="font-size: 0.75rem; color: #38bdf8; margin: 4px 0; font-weight: bold;">Gestión de Bots:</div>
                 <div style="display: flex; gap: 5px; margin-bottom: 6px;">
@@ -373,6 +375,7 @@ if (!canvas || !ctx) {
         let name = 'Rapidez';
         if (type === 'invisibility') { color = '#8b5cf6'; name = 'Invisibilidad'; }
         else if (type === 'power') { color = '#ef4444'; name = 'Poder Destructor'; }
+        else if (type === 'magnet') { color = '#ec4899'; name = 'Imán'; }
 
         specialBoxes.push({
             x,
@@ -467,6 +470,7 @@ if (!canvas || !ctx) {
         playerPowerState.invisibilityTimer = 0;
         playerPowerState.hasDestructionPower = false;
         playerPowerState.powerTimer = 0;
+        playerPowerState.magnetTimer = 0;
 
         player.invincible = true;
         if (!adminInvisible) {
@@ -627,9 +631,10 @@ if (!canvas || !ctx) {
         foodPellets.push({ x: Math.random() * WORLD_WIDTH, y: Math.random() * WORLD_HEIGHT, radius: 4.5, color: Math.random() > 0.5 ? '#ef4444' : '#10b981' });
     }
 
-    function createGoldCoinsFromPlayerDeath(trail) {
-        const prizePool = 1.0;
-        const coinsCount = 50;
+    // ECONOMÍA DE MUERTE EXACTA (SIN INFLACIÓN)
+    function createGoldCoinsFromPlayerDeath(trail, score) {
+        const prizePool = Math.max(0.01, score);
+        const coinsCount = Math.max(10, Math.floor(prizePool * 50));
         const valuePerCoin = prizePool / coinsCount;
         for (let i = 0; i < coinsCount; i++) {
             const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
@@ -638,8 +643,9 @@ if (!canvas || !ctx) {
     }
 
     function createAccumulatedCoinsFromPlayer(trail, totalAmount) {
-        const coinsCount = Math.max(10, Math.floor(totalAmount * 50));
-        const valuePerCoin = totalAmount / coinsCount;
+        const prizePool = Math.max(0.01, totalAmount);
+        const coinsCount = Math.max(10, Math.floor(prizePool * 50));
+        const valuePerCoin = prizePool / coinsCount;
         for (let i = 0; i < coinsCount; i++) {
             const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
             goldCoins.push({ x: randomSegment.x + (Math.random() - 0.5) * 60, y: randomSegment.y + (Math.random() - 0.5) * 60, radius: 6, color: '#eab308', value: valuePerCoin });
@@ -769,7 +775,6 @@ if (!canvas || !ctx) {
 
         const isMaxedOut = bot.maxSegments >= MAX_SEGMENTS_LIMIT;
 
-        // LOS BOTS SOLO ATACAN AL JUGADOR HUMANO (YA NO SE ATACAN ENTRE BOTS)
         if (!isMaxedOut && player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
             if (distPlayer < 900) {
@@ -784,7 +789,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // Búsqueda de monedas (monedas de oro dejadas por jugadores o admin)
         for (const coin of goldCoins) {
             const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
             if (dist < 800) {
@@ -837,11 +841,12 @@ if (!canvas || !ctx) {
             speed: 5.2 + Math.random() * 1.0,
             angle: sAngle,
             trail: [],
-            score: 0, // Inician siempre en 0 dólares
+            score: 0,
             alive: true,
             safetyMargin: 160 + Math.random() * 40,
             riskTolerance: 3.2 + Math.random() * 0.8,
-            cachedObjective: null
+            cachedObjective: null,
+            magnetTimer: 0
         });
     }
 
@@ -918,12 +923,16 @@ if (!canvas || !ctx) {
         }
     }
 
-    function drawOrganicBody(ctx, trail, fixedRadius, skin) {
+    function drawOrganicBody(ctx, trail, fixedRadius, skin, hasMagnet = false) {
         for (let i = trail.length - 1; i >= 0; i -= 2) {
             const p = trail[i];
             if (!p) continue;
             ctx.save();
             ctx.translate(p.x, p.y);
+            if (hasMagnet) {
+                ctx.shadowColor = '#ec4899';
+                ctx.shadowBlur = 12;
+            }
             ctx.fillStyle = skin.secondaryColor;
             ctx.beginPath(); ctx.arc(0, 0, fixedRadius, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = skin.primaryColor;
@@ -932,12 +941,17 @@ if (!canvas || !ctx) {
         }
     }
 
-    function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
+    function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score, hasMagnet = false) {
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
-        ctx.shadowColor = skin.primaryColor;
-        ctx.shadowBlur = 10;
+        if (hasMagnet) {
+            ctx.shadowColor = '#ec4899';
+            ctx.shadowBlur = 22;
+        } else {
+            ctx.shadowColor = skin.primaryColor;
+            ctx.shadowBlur = 10;
+        }
         ctx.fillStyle = skin.primaryColor;
         ctx.beginPath(); ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2); ctx.fill();
         ctx.shadowBlur = 0;
@@ -958,19 +972,111 @@ if (!canvas || !ctx) {
         ctx.font = 'bold 13px sans-serif';
         const textWidth = ctx.measureText(labelText).width;
         ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-        ctx.strokeStyle = '#10b981';
+        ctx.strokeStyle = hasMagnet ? '#ec4899' : '#10b981';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.roundRect(x - textWidth / 2 - 12, y - radius - 34, textWidth + 24, 24, 8);
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = '#10b981';
+        ctx.fillStyle = hasMagnet ? '#ec4899' : '#10b981';
         ctx.textAlign = 'center';
         ctx.fillText(labelText, x, y - radius - 18);
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText(name, x, y - radius - 42);
+        ctx.fillText(hasMagnet ? `${name} (🧲)` : name, x, y - radius - 42);
         ctx.restore();
+    }
+
+    // SISTEMA DE IMÁN: Absorbe puntos, monedas y cajas en todo el cuerpo y cabeza
+    function applyMagnetEffect(entity, isPlayer = false) {
+        const magnetRadius = 240; // Radio de atracción del imán alrededor de cabeza y segmentos
+
+        // 1. Absorber comida (pellets)
+        for (let i = foodPellets.length - 1; i >= 0; i--) {
+            const p = foodPellets[i];
+            let absorbed = false;
+            if (Math.hypot(entity.x - p.x, entity.y - p.y) < magnetRadius) {
+                absorbed = true;
+            } else {
+                for (const seg of entity.trail) {
+                    if (Math.hypot(seg.x - p.x, seg.y - p.y) < magnetRadius) {
+                        absorbed = true;
+                        break;
+                    }
+                }
+            }
+            if (absorbed) {
+                if (isPlayer) {
+                    if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += 1;
+                    playerPowerState.growthPointsEaten += 1;
+                } else {
+                    if (entity.maxSegments < MAX_SEGMENTS_LIMIT) entity.maxSegments += 1;
+                }
+                foodPellets.splice(i, 1);
+                spawnPellet();
+            }
+        }
+
+        // 2. Absorber monedas de oro
+        for (let i = goldCoins.length - 1; i >= 0; i--) {
+            const coin = goldCoins[i];
+            let absorbed = false;
+            if (Math.hypot(entity.x - coin.x, entity.y - coin.y) < magnetRadius) {
+                absorbed = true;
+            } else {
+                for (const seg of entity.trail) {
+                    if (Math.hypot(seg.x - coin.x, seg.y - coin.y) < magnetRadius) {
+                        absorbed = true;
+                        break;
+                    }
+                }
+            }
+            if (absorbed) {
+                entity.score += coin.value;
+                if (entity.maxSegments < MAX_SEGMENTS_LIMIT) {
+                    entity.maxSegments += Math.min(2, MAX_SEGMENTS_LIMIT - entity.maxSegments);
+                }
+                goldCoins.splice(i, 1);
+            }
+        }
+
+        // 3. Absorber cajas especiales
+        for (let i = specialBoxes.length - 1; i >= 0; i--) {
+            const box = specialBoxes[i];
+            let absorbed = false;
+            if (Math.hypot(entity.x - box.x, entity.y - box.y) < magnetRadius) {
+                absorbed = true;
+            } else {
+                for (const seg of entity.trail) {
+                    if (Math.hypot(seg.x - box.x, seg.y - box.y) < magnetRadius) {
+                        absorbed = true;
+                        break;
+                    }
+                }
+            }
+            if (absorbed) {
+                if (isPlayer) {
+                    if (box.type === 'speed') {
+                        playerPowerState.speedBoostTimer = 7.0;
+                        showFloatingMessage("⚡ ¡Caja de Rapidez recogida con Imán!", "#0ea5e9");
+                    } else if (box.type === 'invisibility') {
+                        playerPowerState.invisibilityTimer = 7.0;
+                        showFloatingMessage("👻 ¡Caja de Invisibilidad recogida con Imán!", "#8b5cf6");
+                    } else if (box.type === 'power') {
+                        playerPowerState.hasDestructionPower = true;
+                        playerPowerState.powerTimer = 7.0;
+                        showFloatingMessage("💥 ¡Poder Destructor obtenido con Imán!", "#ef4444");
+                    } else if (box.type === 'magnet') {
+                        playerPowerState.magnetTimer = 12.0;
+                        showFloatingMessage("🧲 ¡Duración de Imán extendida!", "#ec4899");
+                    }
+                } else {
+                    if (box.type === 'magnet') entity.magnetTimer = 12.0;
+                    else if (box.type === 'speed') entity.speedBoostTimer = 7.0;
+                }
+                specialBoxes.splice(i, 1);
+            }
+        }
     }
 
     function gameLoop() {
@@ -992,6 +1098,10 @@ if (!canvas || !ctx) {
 
         if (playerPowerState.speedBoostTimer > 0) playerPowerState.speedBoostTimer -= 1/60;
         if (playerPowerState.invisibilityTimer > 0) playerPowerState.invisibilityTimer -= 1/60;
+        if (playerPowerState.magnetTimer > 0) {
+            playerPowerState.magnetTimer -= 1/60;
+            applyMagnetEffect(player, true);
+        }
         if (playerPowerState.hasDestructionPower && playerPowerState.powerTimer > 0) {
             playerPowerState.powerTimer -= 1/60;
             if (playerPowerState.powerTimer <= 0) {
@@ -1032,6 +1142,7 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
+        // Recolección normal por contacto directo con la cabeza (si no están siendo absorbidos por imán)
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
@@ -1084,6 +1195,9 @@ if (!canvas || !ctx) {
                     playerPowerState.hasDestructionPower = true;
                     playerPowerState.powerTimer = 7.0;
                     showFloatingMessage("💥 ¡Poder Destructor obtenido!", "#ef4444");
+                } else if (box.type === 'magnet') {
+                    playerPowerState.magnetTimer = 12.0;
+                    showFloatingMessage("🧲 ¡Caja Imán recogida!", "#ec4899");
                 }
                 specialBoxes.splice(i, 1);
             }
@@ -1104,7 +1218,7 @@ if (!canvas || !ctx) {
             const nearbyBotsForCoins = entityGrid.getNearby(coin.x, coin.y);
             for (const bot of nearbyBotsForCoins) {
                 if (bot !== player && bot.alive && Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
-                    bot.score += coin.value; // El bot solo gana valor si recoge una moneda real de oro
+                    bot.score += coin.value;
                     if (bot.maxSegments < MAX_SEGMENTS_LIMIT) bot.maxSegments += 1;
                     goldCoins.splice(i, 1);
                     coinEaten = true;
@@ -1115,11 +1229,16 @@ if (!canvas || !ctx) {
         }
 
         // =====================================================================
-        // BUCLE DE BOTS CON TIME-SLICING Y CERO VALOR POR PELEAS ENTRE BOTS
+        // BUCLE DE BOTS CON TIME-SLICING, IMÁN Y ECONOMÍA EXACTA
         // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
+
+            if (bot.magnetTimer > 0) {
+                bot.magnetTimer -= 1/60;
+                applyMagnetEffect(bot, false);
+            }
 
             if (!bot.cachedObjective || (frameCount % 15 === (bIndex % 15))) {
                 bot.cachedObjective = chooseBotObjective(bot);
@@ -1169,7 +1288,7 @@ if (!canvas || !ctx) {
             }
             if (!bot.alive) continue;
 
-            // 2. Colisión Bot vs OTRO Bot (¡YA NO DAN PUNTUACIÓN EN DÓLARES!)
+            // 2. Colisión Bot vs OTRO Bot
             let botDiedByOther = false;
             const nearbyForCollision = entityGrid.getNearby(bot.x, bot.y);
             for (const otherBot of nearbyForCollision) {
@@ -1179,7 +1298,6 @@ if (!canvas || !ctx) {
                     const seg = otherBot.trail[i];
                     if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + otherBot.radius * 0.6) {
                         createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
-                        // EL OTRO BOT NO GANA DÓLARES (`score`), solo un pequeño crecimiento de segmento
                         otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 10);
                         showFloatingMessage(`💥 ${bot.name} chocó contra el cuerpo de ${otherBot.name}.`, '#64748b');
                         const deadName = bot.name;
@@ -1202,9 +1320,9 @@ if (!canvas || !ctx) {
                     if (Math.hypot(player.x - seg.x, player.y - seg.y) < player.radius + bot.radius * 0.6) {
                         player.alive = false;
                         isGameActive = false;
-                        bot.score += 1; // Si el bot logra cazar al jugador, gana 1 dólar por la kill
+                        bot.score += 1;
                         bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
-                        createGoldCoinsFromPlayerDeath(player.trail);
+                        createGoldCoinsFromPlayerDeath(player.trail, player.score);
                         showFloatingMessage(`💥 ¡Chocaste contra el cuerpo de ${bot.name}!`, '#ef4444');
                         const gallery = document.getElementById('skinGallery');
                         if (gallery) gallery.style.display = 'block';
@@ -1215,22 +1333,24 @@ if (!canvas || !ctx) {
             }
 
             if (bot.alive) {
-                drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin);
-                drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
+                const hasBotMagnet = bot.magnetTimer > 0;
+                drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin, hasBotMagnet);
+                drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score, hasBotMagnet);
             }
         }
 
         if (player.alive && isGameActive) {
             const lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
             const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
+            const hasPlayerMagnet = playerPowerState.magnetTimer > 0;
             if (!isPlayerHidden) {
-                drawOrganicBody(ctx, player.trail, player.radius, player.skin);
-                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score);
+                drawOrganicBody(ctx, player.trail, player.radius, player.skin, hasPlayerMagnet);
+                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score, hasPlayerMagnet);
             } else {
                 ctx.save();
                 ctx.globalAlpha = 0.35;
-                drawOrganicBody(ctx, player.trail, player.radius, player.skin);
-                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, `${player.name} (👻)`, player.score);
+                drawOrganicBody(ctx, player.trail, player.radius, player.skin, hasPlayerMagnet);
+                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, `${player.name} (👻)`, player.score, hasPlayerMagnet);
                 ctx.restore();
             }
         }
