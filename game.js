@@ -80,6 +80,276 @@ const skinCatalog = {
     clockwork_gator: { name: 'Clockwork Gator', primaryColor: '#d97706', secondaryColor: '#78350f' }
 };
 const skinKeys = Object.keys(skinCatalog);
+// ===== CRIATURAS FANTÁSTICAS =====
+const beastSpecies = {
+  royal_serpent: {
+    name: 'Royal Serpent',
+    primaryColor: '#facc15',
+    secondaryColor: '#f59e0b',
+    accent: '#fff7d6',
+    eyeColor: '#ff4d5a',
+    glow: '#fbbf24',
+    species: 'snake'
+  },
+  sun_dragon: {
+    name: 'Sun Dragon',
+    primaryColor: '#ffd166',
+    secondaryColor: '#f97316',
+    accent: '#fff7d6',
+    eyeColor: '#ff4d5a',
+    glow: '#fbbf24',
+    species: 'dragon'
+  },
+  emerald_frog: {
+    name: 'Emerald Frog',
+    primaryColor: '#34d399',
+    secondaryColor: '#059669',
+    accent: '#d9f99d',
+    eyeColor: '#ff7b54',
+    glow: '#6ee7b7',
+    species: 'frog'
+  },
+  jungle_anaconda: {
+    name: 'Jungle Anaconda',
+    primaryColor: '#c084fc',
+    secondaryColor: '#7c3aed',
+    accent: '#ddd6fe',
+    eyeColor: '#ff5d8f',
+    glow: '#d8b4fe',
+    species: 'anaconda'
+  },
+  imperial_drake: {
+    name: 'Imperial Drake',
+    primaryColor: '#dbeafe',
+    secondaryColor: '#64748b',
+    accent: '#f8fafc',
+    eyeColor: '#ff5d8f',
+    glow: '#bfdbfe',
+    species: 'imperial_dragon'
+  },
+  swamp_gator: {
+    name: 'Swamp Gator',
+    primaryColor: '#f59e0b',
+    secondaryColor: '#7c2d12',
+    accent: '#fef3c7',
+    eyeColor: '#ff5d8f',
+    glow: '#fbbf24',
+    species: 'gator'
+  }
+};
+
+function normalizeBeastSkin(skin) {
+  const base = skin && typeof skin === 'object' ? skin : beastSpecies.royal_serpent;
+  return {
+    name: base.name || 'Creature',
+    primaryColor: base.primaryColor || '#facc15',
+    secondaryColor: base.secondaryColor || '#f59e0b',
+    accent: base.accent || '#fff7d6',
+    eyeColor: base.eyeColor || '#ff4d5a',
+    glow: base.glow || '#fbbf24',
+    species: base.species || 'snake'
+  };
+}
+
+function drawBeastBand(ctx, radius, accent) {
+  ctx.save();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  for (let i = -3; i <= 3; i++) {
+    const x = i * (radius * 0.35);
+    ctx.beginPath();
+    ctx.moveTo(x, -radius * 0.95);
+    ctx.quadraticCurveTo(x + 8, 0, x, radius * 0.95);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBeastBody(ctx, x, y, radius, skin, hasMagnet = false) {
+  const s = normalizeBeastSkin(skin);
+  const species = s.species;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.shadowColor = hasMagnet ? '#ec4899' : s.glow;
+  ctx.shadowBlur = hasMagnet ? 22 : 14;
+
+  if (species === 'dragon' || species === 'imperial_dragon') {
+    ctx.fillStyle = s.secondaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 1.9, radius * 0.95, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 1.22, radius * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = s.accent;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 15, -radius * 1.25);
+      ctx.lineTo(i * 15 + 8, -radius * 2.1);
+      ctx.lineTo(i * 15 + 16, -radius * 1.25);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = s.accent;
+    ctx.beginPath();
+    ctx.moveTo(-radius * 1.2, 0);
+    ctx.lineTo(0, -radius * 2.1);
+    ctx.lineTo(radius * 1.2, 0);
+    ctx.closePath();
+    ctx.fill();
+
+  } else if (species === 'frog') {
+    ctx.fillStyle = s.secondaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 1.8, radius * 1.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 1.15, radius * 0.72, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = s.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-radius * 1.2, radius * 0.25);
+    ctx.quadraticCurveTo(0, radius * 1.7, radius * 1.2, radius * 0.25);
+    ctx.stroke();
+
+  } else if (species === 'anaconda') {
+    ctx.fillStyle = s.secondaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 2.2, radius * 0.95, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 1.42, radius * 0.72, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = s.accent;
+    ctx.lineWidth = 3;
+    for (let i = -2; i <= 2; i++) {
+      const yy = i * 9;
+      ctx.beginPath();
+      ctx.moveTo(-radius * 1.8, yy);
+      ctx.lineTo(radius * 1.8, yy + 4);
+      ctx.stroke();
+    }
+
+  } else if (species === 'gator') {
+    ctx.fillStyle = s.secondaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 2.1, radius * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 1.35, radius * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = s.accent;
+    ctx.fillRect(-radius * 0.5, -radius * 0.18, radius * 1.0, radius * 0.36);
+
+  } else {
+    ctx.fillStyle = s.secondaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 1.9, radius * 0.82, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 1.18, radius * 0.58, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawBeastBand(ctx, radius, s.accent);
+  }
+
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(-radius * 0.75, -radius * 0.2, 6, 0, Math.PI * 2);
+  ctx.arc(radius * 0.75, -radius * 0.2, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = s.eyeColor;
+  ctx.beginPath();
+  ctx.arc(-radius * 0.75, -radius * 0.2, 2.4, 0, Math.PI * 2);
+  ctx.arc(radius * 0.75, -radius * 0.2, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawBeastHead(ctx, x, y, radius, angle, skin, name, score, hasMagnet = false) {
+  const s = normalizeBeastSkin(skin);
+  const species = s.species;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle || 0);
+  ctx.shadowColor = hasMagnet ? '#ec4899' : s.glow;
+  ctx.shadowBlur = hasMagnet ? 26 : 14;
+
+  if (species === 'dragon' || species === 'imperial_dragon') {
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.moveTo(radius * 1.5, 0);
+    ctx.lineTo(radius * 2.8, -radius * 1.2);
+    ctx.lineTo(radius * 3.2, 0);
+    ctx.lineTo(radius * 2.8, radius * 1.2);
+    ctx.closePath();
+    ctx.fill();
+  } else if (species === 'frog') {
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.ellipse(radius * 0.7, 0, radius * 1.15, radius * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (species === 'anaconda') {
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.moveTo(radius * 1.3, 0);
+    ctx.lineTo(radius * 2.8, -radius * 0.9);
+    ctx.lineTo(radius * 3.0, 0);
+    ctx.lineTo(radius * 2.8, radius * 0.9);
+    ctx.closePath();
+    ctx.fill();
+  } else if (species === 'gator') {
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.moveTo(radius * 1.0, 0);
+    ctx.lineTo(radius * 2.6, -radius * 0.8);
+    ctx.lineTo(radius * 3.0, 0);
+    ctx.lineTo(radius * 2.6, radius * 0.8);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillStyle = s.primaryColor;
+    ctx.beginPath();
+    ctx.ellipse(radius * 0.65, 0, radius * 1.15, radius * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(radius * 0.45, -radius * 0.3, 5.4, 0, Math.PI * 2);
+  ctx.arc(radius * 0.45, radius * 0.3, 5.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = s.eyeColor;
+  ctx.beginPath();
+  ctx.arc(radius * 0.7, -radius * 0.3, 2.2, 0, Math.PI * 2);
+  ctx.arc(radius * 0.7, radius * 0.3, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+window.beastSpecies = beastSpecies;                                                                                                                                                                                                                                
 
 const player = {
     x: WORLD_WIDTH / 2,
@@ -92,7 +362,7 @@ const player = {
     isSpectator: false,
     score: 0,
     name: 'Tú (Jugador)',
-    skin: skinCatalog.cyber_dragon,
+    skin: beastSpecies.sun_dragon, // <- Cambiado a la criatura mitológica inicial
     cashOutGoal: 50.0,
     invincible: false,
     cashOutInterval: null
@@ -1490,13 +1760,13 @@ function gameLoop() {
                 if (playerIsGhost || (isAdminUser && adminFreeCam)) {
                     ctx.save();
                     ctx.globalAlpha = 0.4;
-                    drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin, hasBotMagnet);
-                    drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, `${bot.name} (👻)`, bot.score, hasBotMagnet);
+                    drawBeastBody(ctx, player.x, player.y, player.radius * 1.7, player.skin || beastSpecies.sun_dragon, !!player.hasMagnet);
+                    drawBeastHead(ctx, player.x, player.y, player.radius * 1.2, player.angle || 0, player.skin || beastSpecies.sun_dragon, player.name || 'Player', player.score || 0, !!player.hasMagnet);
                     ctx.restore();
                 }
             } else {
-                drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin, hasBotMagnet);
-                drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score, hasBotMagnet);
+                drawBeastBody(ctx, bot.x, bot.y, bot.radius * 1.6, bot.skin || beastSpecies.royal_serpent, !!bot.hasMagnet);
+                drawBeastHead(ctx, bot.x, bot.y, bot.radius * 1.1, bot.angle || 0, bot.skin || beastSpecies.royal_serpent, bot.name || 'Bot', bot.score || 0, !!bot.hasMagnet);
             }
         }
     }
