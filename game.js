@@ -238,7 +238,7 @@ if (!canvas || !ctx) {
         bots.forEach(b => {
             b.score = 0;
             b.maxSegments = INITIAL_SEGMENTS;
-            b.trail = []; // Vacía el cuerpo al instante para encogerlos en caliente
+            b.trail = [];
         });
         showFloatingMessage('🔄 ¡Se ha restablecido el valor de todos los bots a $0.00!', '#d97706');
         updateAdminBotSelect();
@@ -767,9 +767,9 @@ if (!canvas || !ctx) {
         let bestObjective = null;
         let highestScore = -999;
 
-        // Si su crecimiento está a tope, se dedica a buscar monedas/vagar relajadamente
         const isMaxedOut = bot.maxSegments >= MAX_SEGMENTS_LIMIT;
 
+        // LOS BOTS SOLO ATACAN AL JUGADOR HUMANO (YA NO SE ATACAN ENTRE BOTS)
         if (!isMaxedOut && player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
             if (distPlayer < 900) {
@@ -784,23 +784,7 @@ if (!canvas || !ctx) {
             }
         }
 
-        if (!isMaxedOut) {
-            const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
-            for (const other of nearbyEntities) {
-                if (other === bot || !other.alive || other === player) continue;
-                const distToOther = Math.hypot(other.x - bot.x, other.y - bot.y);
-                if (distToOther < 700) {
-                    const interceptX = other.x + Math.cos(other.angle || 0) * 100;
-                    const interceptY = other.y + Math.sin(other.angle || 0) * 100;
-                    const score = 400 - distToOther + (other.score * 20);
-                    if (score > highestScore) {
-                        highestScore = score;
-                        bestObjective = { x: interceptX, y: interceptY, type: 'attack_bot' };
-                    }
-                }
-            }
-        }
-
+        // Búsqueda de monedas (monedas de oro dejadas por jugadores o admin)
         for (const coin of goldCoins) {
             const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
             if (dist < 800) {
@@ -853,7 +837,7 @@ if (!canvas || !ctx) {
             speed: 5.2 + Math.random() * 1.0,
             angle: sAngle,
             trail: [],
-            score: 0,
+            score: 0, // Inician siempre en 0 dólares
             alive: true,
             safetyMargin: 160 + Math.random() * 40,
             riskTolerance: 3.2 + Math.random() * 0.8,
@@ -1120,7 +1104,7 @@ if (!canvas || !ctx) {
             const nearbyBotsForCoins = entityGrid.getNearby(coin.x, coin.y);
             for (const bot of nearbyBotsForCoins) {
                 if (bot !== player && bot.alive && Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
-                    bot.score += coin.value;
+                    bot.score += coin.value; // El bot solo gana valor si recoge una moneda real de oro
                     if (bot.maxSegments < MAX_SEGMENTS_LIMIT) bot.maxSegments += 1;
                     goldCoins.splice(i, 1);
                     coinEaten = true;
@@ -1131,13 +1115,12 @@ if (!canvas || !ctx) {
         }
 
         // =====================================================================
-        // BUCLE DE BOTS CON TIME-SLICING Y CACHÉ DE IA
+        // BUCLE DE BOTS CON TIME-SLICING Y CERO VALOR POR PELEAS ENTRE BOTS
         // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
 
-            // Time-Slicing: recalcula la dirección solo en su turno escalonado
             if (!bot.cachedObjective || (frameCount % 15 === (bIndex % 15))) {
                 bot.cachedObjective = chooseBotObjective(bot);
             }
@@ -1167,6 +1150,7 @@ if (!canvas || !ctx) {
 
             const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
 
+            // 1. Colisión Bot vs Jugador
             if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
                 for (let i = 0; i < player.trail.length - 10; i++) {
                     const seg = player.trail[i];
@@ -1185,6 +1169,7 @@ if (!canvas || !ctx) {
             }
             if (!bot.alive) continue;
 
+            // 2. Colisión Bot vs OTRO Bot (¡YA NO DAN PUNTUACIÓN EN DÓLARES!)
             let botDiedByOther = false;
             const nearbyForCollision = entityGrid.getNearby(bot.x, bot.y);
             for (const otherBot of nearbyForCollision) {
@@ -1194,9 +1179,9 @@ if (!canvas || !ctx) {
                     const seg = otherBot.trail[i];
                     if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + otherBot.radius * 0.6) {
                         createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
-                        otherBot.score += 1;
-                        otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 20);
-                        showFloatingMessage(`💥 ${bot.name} chocó contra el cuerpo de ${otherBot.name}.`, '#ef4444');
+                        // EL OTRO BOT NO GANA DÓLARES (`score`), solo un pequeño crecimiento de segmento
+                        otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 10);
+                        showFloatingMessage(`💥 ${bot.name} chocó contra el cuerpo de ${otherBot.name}.`, '#64748b');
                         const deadName = bot.name;
                         const deadSkin = bot.skin;
                         bots.splice(bIndex, 1);
@@ -1210,13 +1195,14 @@ if (!canvas || !ctx) {
             }
             if (botDiedByOther) continue;
 
+            // 3. Colisión Jugador vs Cuerpo de este Bot
             if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
                 for (let i = 0; i < bot.trail.length - 10; i++) {
                     const seg = bot.trail[i];
                     if (Math.hypot(player.x - seg.x, player.y - seg.y) < player.radius + bot.radius * 0.6) {
                         player.alive = false;
                         isGameActive = false;
-                        bot.score += 1;
+                        bot.score += 1; // Si el bot logra cazar al jugador, gana 1 dólar por la kill
                         bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
                         createGoldCoinsFromPlayerDeath(player.trail);
                         showFloatingMessage(`💥 ¡Chocaste contra el cuerpo de ${bot.name}!`, '#ef4444');
