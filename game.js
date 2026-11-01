@@ -36,6 +36,15 @@ if (!canvas || !ctx) {
 
     window.currentBcvRate = 36.5;
 
+    // Estados de Poderes Especiales del Jugador
+    let playerPowerState = {
+        speedBoostTimer: 0,
+        invisibilityTimer: 0,
+        hasDestructionPower: false,
+        powerTimer: 0,
+        growthPointsEaten: 0
+    };
+
     const skinCatalog = {
         cyber_dragon: { name: 'Digital Dragon', primaryColor: '#10b981', secondaryColor: '#065f46' },
         fire_scale: { name: 'FireScale Killa', primaryColor: '#ef4444', secondaryColor: '#991b1b' },
@@ -63,6 +72,7 @@ if (!canvas || !ctx) {
 
     let foodPellets = [];
     let goldCoins = [];
+    let specialBoxes = [];
     let bots = [];
 
     const camera = {
@@ -120,16 +130,22 @@ if (!canvas || !ctx) {
                 <span id="adminToggleIcon" style="font-size: 1rem; color: #38bdf8; font-weight: bold;">[-]</span>
             </div>
             <div id="adminPanelBody" style="margin-top: 10px; display: block;">
-                <button onclick="adminDropGift('chest')" style="width: 100%; padding: 7px; margin-bottom: 5px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🎁 Cofre</button>
-                <button onclick="adminDropGift('star')" style="width: 100%; padding: 7px; margin-bottom: 8px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⭐ Estrella</button>
+                <button onclick="adminDropGift('chest')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🎁 Cofre</button>
+                <button onclick="adminDropGift('star')" style="width: 100%; padding: 6px; margin-bottom: 6px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">⭐ Estrella</button>
+                
+                <div style="font-size: 0.75rem; color: #38bdf8; margin: 4px 0; font-weight: bold;">Cajas Especiales:</div>
+                <button onclick="adminDropSpecialBox('speed')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #0ea5e9; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">⚡ Caja Rapidez</button>
+                <button onclick="adminDropSpecialBox('invisibility')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">👻 Caja Invisibilidad</button>
+                <button onclick="adminDropSpecialBox('power')" style="width: 100%; padding: 6px; margin-bottom: 8px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">💥 Caja Poder Destructor</button>
+
                 <div style="display: flex; gap: 5px; margin-bottom: 8px;">
-                    <button onclick="adminAddBot()" style="flex: 1; padding: 7px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">➕ Sumar Bot</button>
-                    <button onclick="adminRemoveBot()" style="flex: 1; padding: 7px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">➖ Quitar Bot</button>
+                    <button onclick="adminAddBot()" style="flex: 1; padding: 6px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.75rem;">➕ Sumar Bot</button>
+                    <button onclick="adminRemoveBot()" style="flex: 1; padding: 6px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.75rem;">➖ Quitar Bot</button>
                 </div>
-                <button id="adminFreeCamBtn" onclick="toggleAdminFreeCam()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🗺️ Navegación Libre: OFF</button>
-                <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">👻 Modo Fantasma: OFF</button>
-                <button onclick="adminSpawnDirect()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⚡ Spawn instantáneo</button>
-                <button onclick="adminFreeEntry()" style="width: 100%; padding: 7px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🚀 Ingreso VIP</button>
+                <button id="adminFreeCamBtn" onclick="toggleAdminFreeCam()" style="width: 100%; padding: 6px; margin-bottom: 5px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🗺️ Navegación Libre: OFF</button>
+                <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 6px; margin-bottom: 5px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">👻 Modo Fantasma: OFF</button>
+                <button onclick="adminSpawnDirect()" style="width: 100%; padding: 6px; margin-bottom: 5px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">⚡ Spawn instantáneo</button>
+                <button onclick="adminFreeEntry()" style="width: 100%; padding: 6px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🚀 Ingreso VIP</button>
             </div>
         `;
         document.body.appendChild(panel);
@@ -244,6 +260,30 @@ if (!canvas || !ctx) {
         showFloatingMessage(`🎁 ¡${type === 'chest' ? 'Cofre' : 'Estrella'} desplegado! ($${val.toFixed(2)})`, '#10b981');
     };
 
+    window.adminDropSpecialBox = function(boxType) {
+        if (!isAdminUser) return;
+        const targetX = mouse.x + camera.x;
+        const targetY = mouse.y + camera.y;
+        spawnSpecialBox(targetX, targetY, boxType);
+        showFloatingMessage(`🎁 ¡Caja especial (${boxType}) desplegada por Admin!`, '#38bdf8');
+    };
+
+    function spawnSpecialBox(x, y, type) {
+        let color = '#0ea5e9';
+        let name = 'Rapidez';
+        if (type === 'invisibility') { color = '#8b5cf6'; name = 'Invisibilidad'; }
+        else if (type === 'power') { color = '#ef4444'; name = 'Poder Destructor'; }
+
+        specialBoxes.push({
+            x,
+            y,
+            radius: 14,
+            type,
+            color,
+            name
+        });
+    }
+
     async function syncBcvRate() {
         try {
             const response = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
@@ -296,7 +336,7 @@ if (!canvas || !ctx) {
                 if (wallet && parseFloat(wallet.balance_usd) >= ENTRY_FEE) {
                     clearInterval(verificationInterval);
                     verificationInterval = null;
-                    showFloatingMessage('¡Pago approved! Entrando...', '#10b981');
+                    showFloatingMessage('¡Pago aprobado! Entrando...', '#10b981');
                     closeModal();
                     const newBalance = parseFloat(wallet.balance_usd) - ENTRY_FEE;
                     await supabaseClient.from('user_wallets').update({ balance_usd: newBalance }).eq('user_id', currentUserId);
@@ -322,6 +362,12 @@ if (!canvas || !ctx) {
         player.score = 0;
         player.maxSegments = INITIAL_SEGMENTS;
         player.trail = [];
+        playerPowerState.growthPointsEaten = 0;
+        playerPowerState.speedBoostTimer = 0;
+        playerPowerState.invisibilityTimer = 0;
+        playerPowerState.hasDestructionPower = false;
+        playerPowerState.powerTimer = 0;
+
         player.invincible = true;
         if (!adminInvisible) {
             setTimeout(() => {
@@ -522,16 +568,53 @@ if (!canvas || !ctx) {
         return angle;
     }
 
+    // Lógica para disparar el Poder Destructor de 7s (al hacer click izquierdo en partida con poder activo)
+    window.addEventListener('mousedown', (event) => {
+        if (!player.alive || !isGameActive) return;
+        if (playerPowerState.hasDestructionPower && playerPowerState.powerTimer > 0) {
+            // Activar poder destructor en dirección del mouse/click
+            const screenCenterX = canvas.width / 2;
+            const screenCenterY = canvas.height / 2;
+            const clickAngle = Math.atan2(event.clientY - screenCenterY, event.clientX - screenCenterX);
+
+            // Destruir bots cercanos en esa dirección de disparo (cono de 60 grados y rango de 500px)
+            let destroyedCount = 0;
+            for (let i = bots.length - 1; i >= 0; i--) {
+                const b = bots[i];
+                const dist = Math.hypot(b.x - player.x, b.y - player.y);
+                const angleToBot = Math.atan2(b.y - player.y, b.x - player.x);
+                const angleDiff = Math.abs(normalizeAngle(angleToBot - clickAngle));
+
+                if (dist < 550 && angleDiff < 0.6) {
+                    createCoinsOrPelletsFromBotDeath(b.trail, b.score);
+                    const deadName = b.name;
+                    const deadSkin = b.skin;
+                    bots.splice(i, 1);
+                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
+                    destroyedCount++;
+                }
+            }
+
+            if (destroyedCount > 0) {
+                showFloatingMessage(`💥 ¡Poder Destructor lanzado! (${destroyedCount} enemigos eliminados)`, '#ef4444');
+            } else {
+                showFloatingMessage(`💥 Poder lanzado, pero no impactó a ningún enemigo.`, '#facc15');
+            }
+
+            // Consumir el poder
+            playerPowerState.hasDestructionPower = false;
+            playerPowerState.powerTimer = 0;
+        }
+    });
+
     // =========================================================================
     // MOTOR DE INTELIGENCIA ARTIFICIAL DE BOTS AVANZADO (MULTICAPA Y TÁCTICO)
     // =========================================================================
 
-    // Cálculo avanzado de nivel de riesgo para los bots (Prioridad 1 y 2)
     function getAdvancedBotRisk(bot, playerRef, botList) {
         let riskScore = 0;
         let nearestDangerAngle = null;
 
-        // 1. Evaluación de riesgo por proximidad a Paredes
         const wallDistMin = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
         if (wallDistMin < 180) {
             riskScore += (180 - wallDistMin) * 0.08; 
@@ -541,14 +624,12 @@ if (!canvas || !ctx) {
             else nearestDangerAngle = Math.PI / 2;
         }
 
-        // 2. Evaluación de riesgo frente al Jugador humano (cuerpo y cabeza)
-        if (playerRef.alive && !(isAdminUser && adminInvisible)) {
+        if (playerRef.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distHead = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
             if (distHead < bot.safetyMargin) {
                 riskScore += (bot.safetyMargin - distHead) * 0.05;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(playerRef.y - bot.y, playerRef.x - bot.x);
             }
-            // Riesgo por colisión con el rastro/cuerpo del jugador
             for (let i = 0; i < playerRef.trail.length; i += 3) {
                 const seg = playerRef.trail[i];
                 const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
@@ -560,7 +641,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 3. Evaluación de riesgo frente a otros Bots (cabezas y rastros)
         for (const other of botList) {
             if (other === bot || !other.alive) continue;
             const distBotHead = Math.hypot(other.x - bot.x, other.y - bot.y);
@@ -582,11 +662,9 @@ if (!canvas || !ctx) {
         return { riskScore, nearestDangerAngle };
     }
 
-    // Selección jerárquica de objetivos de bots (Prioridad 3 y 4)
     function chooseBotObjective(bot) {
         const { riskScore } = getAdvancedBotRisk(bot, player, bots);
 
-        // Si el riesgo supera la tolerancia personal del bot, entra en MODO EVASIÓN ESTRICTO
         if (riskScore > bot.riskTolerance) {
             return { type: 'evade', score: 999 };
         }
@@ -594,11 +672,9 @@ if (!canvas || !ctx) {
         let bestObjective = null;
         let highestScore = -999;
 
-        // Evaluamos Monedas (Prioridad 3)
         for (const coin of goldCoins) {
             const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
             if (dist < 700) {
-                // Bonus extra a la moneda si el jugador está cerca para ganársela de forma segura
                 const distPlayerToCoin = player.alive ? Math.hypot(coin.x - player.x, coin.y - player.y) : 999;
                 let score = 250 - dist + (coin.value * 40);
                 if (distPlayerToCoin < 350) score += 80;
@@ -610,7 +686,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // Evaluamos Comida Puntos (Prioridad 3.5)
         if (!bestObjective || highestScore < 100) {
             for (const pellet of foodPellets) {
                 const dist = Math.hypot(pellet.x - bot.x, pellet.y - bot.y);
@@ -624,13 +699,11 @@ if (!canvas || !ctx) {
             }
         }
 
-        // Evaluamos Ataque Táctico al Jugador (Prioridad 4 - Solo si hay ventaja y agresividad alta)
-        if (player.alive && !(isAdminUser && adminInvisible) && bot.aggression > 0.6) {
+        if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0)) && bot.aggression > 0.6) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
             const playerAngle = Math.atan2(player.y - bot.y, player.x - bot.x);
             const angleDiff = Math.abs(normalizeAngle(playerAngle - bot.angle));
 
-            // Ataque quirúrgico de paso rápido sin lanzarse de frente a suicidarse
             if (distPlayer < 320 && angleDiff < 0.7 && riskScore < 2.0) {
                 const attackTargetX = player.x + Math.cos(player.angle || 0) * 80;
                 const attackTargetY = player.y + Math.sin(player.angle || 0) * 80;
@@ -640,7 +713,6 @@ if (!canvas || !ctx) {
 
         if (bestObjective) return bestObjective;
 
-        // Vuelo libre de navegación si no hay nada en rango
         return {
             x: bot.x + Math.cos(bot.angle) * 300,
             y: bot.y + Math.sin(bot.angle) * 300,
@@ -669,7 +741,6 @@ if (!canvas || !ctx) {
             trail: [],
             score: 0,
             alive: true,
-            // Personalidad autónoma única por bot
             aggression: 0.3 + Math.random() * 0.5,
             safetyMargin: 180 + Math.random() * 100,
             riskTolerance: 2.5 + Math.random() * 2.0
@@ -807,6 +878,17 @@ if (!canvas || !ctx) {
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Actualización de temporizadores de poderes del jugador (7 segundos de duración)
+        if (playerPowerState.speedBoostTimer > 0) playerPowerState.speedBoostTimer -= 1/60;
+        if (playerPowerState.invisibilityTimer > 0) playerPowerState.invisibilityTimer -= 1/60;
+        if (playerPowerState.hasDestructionPower && playerPowerState.powerTimer > 0) {
+            playerPowerState.powerTimer -= 1/60;
+            if (playerPowerState.powerTimer <= 0) {
+                playerPowerState.hasDestructionPower = false;
+                showFloatingMessage("💥 El poder destructor ha expirado.", "#64748b");
+            }
+        }
+
         if (adminFreeCam) {
             const moveSpeed = 15;
             if (mouse.x < 100) adminCamX -= moveSpeed;
@@ -820,8 +902,12 @@ if (!canvas || !ctx) {
             const screenCenterX = canvas.width / 2;
             const screenCenterY = canvas.height / 2;
             const angle = Math.atan2(mouse.y - screenCenterY, mouse.x - screenCenterX);
-            player.x += Math.cos(angle) * player.speed;
-            player.y += Math.sin(angle) * player.speed;
+            
+            // Aplicar velocidad aumentada si el boost está activo
+            const currentActualSpeed = playerPowerState.speedBoostTimer > 0 ? player.speed * 1.8 : player.speed;
+
+            player.x += Math.cos(angle) * currentActualSpeed;
+            player.y += Math.sin(angle) * currentActualSpeed;
             player.x = Math.max(30, Math.min(WORLD_WIDTH - 30, player.x));
             player.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, player.y));
             player.trail.push({ x: player.x, y: player.y, angle });
@@ -836,14 +922,62 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
+        // Render y colisión con pellets de comida (puntos de crecimiento)
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
             ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
             if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
                 if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += 1;
+                
+                // Conteo de puntos de crecimiento para la caja sorpresa (100 puntos)
+                playerPowerState.growthPointsEaten += 1;
+                if (playerPowerState.growthPointsEaten >= 100) {
+                    playerPowerState.growthPointsEaten = 0;
+                    // Soltar caja sorpresa enfrente del jugador
+                    const lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
+                    const dropX = player.x + Math.cos(lastAngle) * 70;
+                    const dropY = player.y + Math.sin(lastAngle) * 70;
+                    const types = ['speed', 'invisibility', 'power'];
+                    const randomType = types[Math.floor(Math.random() * types.length)];
+                    spawnSpecialBox(dropX, dropY, randomType);
+                    showFloatingMessage("🎁 ¡Has alcanzado 100 puntos! Caja de regalo desplegada enfrente.", "#38bdf8");
+                }
+
                 foodPellets.splice(i, 1);
                 spawnPellet();
+            }
+        }
+
+        // Render y colisión con Cajas de Regalos Especiales
+        for (let i = specialBoxes.length - 1; i >= 0; i--) {
+            const box = specialBoxes[i];
+            ctx.save();
+            ctx.shadowColor = box.color;
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = box.color;
+            ctx.beginPath();
+            ctx.rect(box.x - box.radius, box.y - box.radius, box.radius * 2, box.radius * 2);
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+            ctx.restore();
+
+            // Colisión con el jugador
+            if (player.alive && isGameActive && Math.hypot(player.x - box.x, player.y - box.y) < player.radius + box.radius) {
+                if (box.type === 'speed') {
+                    playerPowerState.speedBoostTimer = 7.0;
+                    showFloatingMessage("⚡ ¡Caja de Rapidez recogida! Velocidad x1.8 por 7s.", "#0ea5e9");
+                } else if (box.type === 'invisibility') {
+                    playerPowerState.invisibilityTimer = 7.0;
+                    showFloatingMessage("👻 ¡Caja de Invisibilidad recogida! Oculto por 7s.", "#8b5cf6");
+                } else if (box.type === 'power') {
+                    playerPowerState.hasDestructionPower = true;
+                    playerPowerState.powerTimer = 7.0;
+                    showFloatingMessage("💥 ¡Poder Destructor obtenido! Haz click en 7s para disparar.", "#ef4444");
+                }
+                specialBoxes.splice(i, 1);
             }
         }
 
@@ -881,37 +1015,31 @@ if (!canvas || !ctx) {
 
             let targetAngle = bot.angle;
 
-            // PRIORIDAD 1 & 2: EVASIÓN Y SUPERVIVENCIA
             if (objective.type === 'evade' && nearestDangerAngle !== null) {
-                // Escapar en dirección opuesta a la amenaza
                 targetAngle = normalizeAngle(nearestDangerAngle + Math.PI);
             } else if (objective.type === 'attack_pass') {
-                // PRIORIDAD 4: ATAQUE QUIRÚRGICO AL PASO (RÁPIDO Y SEGURO)
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             } else {
-                // PRIORIDAD 3: IR POR MONEDAS O COMIDA PUNTOS
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             }
 
-            // Suavizado de giro continuo y sin tirones
             const angleDiff = normalizeAngle(targetAngle - bot.angle);
             bot.angle += angleDiff * 0.16;
             bot.angle = normalizeAngle(bot.angle);
 
-            // Control de velocidad adaptativo
             const currentSpeed = (objective.type === 'attack_pass') ? bot.speed * 1.25 : bot.speed;
             bot.x += Math.cos(bot.angle) * currentSpeed;
             bot.y += Math.sin(bot.angle) * currentSpeed;
 
-            // Limites estrictos dentro del mapa
             bot.x = Math.max(40, Math.min(WORLD_WIDTH - 40, bot.x));
             bot.y = Math.max(40, Math.min(WORLD_HEIGHT - 40, bot.y));
 
             bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
             if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-            // VERIFICACIÓN DE COLISIONES JUGADOR vs BOT
-            if (player.alive && isGameActive && !player.invincible && !(isAdminUser && adminInvisible)) {
+            // Verificación de colisiones jugador vs bot (respetando invisibilidad temporal o modo fantasma)
+            const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
+            if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
                 for (const segment of bot.trail) {
                     const hit = Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.75;
                     if (hit) {
@@ -928,8 +1056,7 @@ if (!canvas || !ctx) {
                 }
             }
 
-            // VERIFICACIÓN DE ELIMINACIÓN DE BOT POR EL JUGADOR
-            if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
+            if (player.alive && isGameActive && !isPlayerHidden) {
                 for (const segment of player.trail) {
                     if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
                         createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
@@ -951,7 +1078,8 @@ if (!canvas || !ctx) {
 
         if (player.alive && isGameActive) {
             const lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-            if (!(isAdminUser && adminInvisible)) {
+            const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
+            if (!isPlayerHidden) {
                 drawOrganicBody(ctx, player.trail, player.radius, player.skin);
                 drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score);
             } else {
