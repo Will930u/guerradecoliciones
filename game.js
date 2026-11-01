@@ -896,10 +896,17 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
+        // =====================================================================
+        // CONSUMO DE PELLETS DE COMIDA (JUGADOR Y BOTS)
+        // =====================================================================
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
             ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
+            
+            let pelletEaten = false;
+
+            // Consumo por el jugador
             if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
                 if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += 1;
                 
@@ -917,7 +924,20 @@ if (!canvas || !ctx) {
 
                 foodPellets.splice(i, 1);
                 spawnPellet();
+                continue;
             }
+
+            // Consumo por los BOTS
+            for (const bot of bots) {
+                if (bot.alive && Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
+                    if (bot.maxSegments < MAX_SEGMENTS_LIMIT) bot.maxSegments += 1;
+                    foodPellets.splice(i, 1);
+                    spawnPellet();
+                    pelletEaten = true;
+                    break;
+                }
+            }
+            if (pelletEaten) continue;
         }
 
         for (let i = specialBoxes.length - 1; i >= 0; i--) {
@@ -974,9 +994,7 @@ if (!canvas || !ctx) {
             if (coinEaten) continue;
         }
 
-        // =====================================================================
-        // BUCLE DE BOTS Y COLISIONES CABEZA A CUERPO (ELIMINACIÓN ESTRICTA)
-        // =====================================================================
+        // BUCLE DE BOTS Y COLISIONES CABEZA A CUERPO
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
