@@ -194,8 +194,8 @@ if (!canvas || !ctx) {
                 
                 <div style="font-size: 0.75rem; color: #38bdf8; margin: 4px 0; font-weight: bold;">Cajas Especiales:</div>
                 <button onclick="adminDropSpecialBox('speed')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #0ea5e9; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">⚡ Caja Rapidez</button>
-                <button onclick="adminDropSpecialBox('invisibility')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">👻 Caja Fantasma</button>
-                <button onclick="adminDropSpecialBox('power')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">💥 Caja Destrucción</button>
+                <button onclick="adminDropSpecialBox('invisibility')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">👻 Caja Invisibilidad</button>
+                <button onclick="adminDropSpecialBox('power')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">💥 Caja Poder Destructor</button>
                 <button onclick="adminDropSpecialBox('magnet')" style="width: 100%; padding: 6px; margin-bottom: 8px; background: #ec4899; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🧲 Caja Imán</button>
 
                 <div style="font-size: 0.75rem; color: #38bdf8; margin: 4px 0; font-weight: bold;">Gestión de Bots:</div>
@@ -328,7 +328,7 @@ if (!canvas || !ctx) {
             btn.style.background = adminInvisible ? '#ef4444' : '#64748b';
             btn.innerText = adminInvisible ? '👻 Modo Fantasma: ON' : '👻 Modo Fantasma: OFF';
         }
-        showFloatingMessage(adminInvisible ? '👻 Modo Fantasma activo (Invisible para todos).' : '👻 Modo Fantasma inactivo.', adminInvisible ? '#ef4444' : '#10b981');
+        showFloatingMessage(adminInvisible ? '👻 Modo Fantasma activo.' : '👻 Modo Fantasma inactivo.', adminInvisible ? '#ef4444' : '#10b981');
     };
 
     window.adminAddBot = function() {
@@ -373,8 +373,8 @@ if (!canvas || !ctx) {
     function spawnSpecialBox(x, y, type) {
         let color = '#0ea5e9';
         let name = 'Rapidez';
-        if (type === 'invisibility') { color = '#8b5cf6'; name = 'Fantasma'; }
-        else if (type === 'power') { color = '#ef4444'; name = 'Destrucción'; }
+        if (type === 'invisibility') { color = '#8b5cf6'; name = 'Invisibilidad'; }
+        else if (type === 'power') { color = '#ef4444'; name = 'Poder Destructor'; }
         else if (type === 'magnet') { color = '#ec4899'; name = 'Imán'; }
 
         specialBoxes.push({
@@ -701,9 +701,9 @@ if (!canvas || !ctx) {
             }
 
             if (destroyedCount > 0) {
-                showFloatingMessage(`💥 ¡Poder de Destrucción lanzado! (${destroyedCount} eliminados)`, '#ef4444');
+                showFloatingMessage(`💥 ¡Poder Destructor lanzado! (${destroyedCount} enemigos eliminados)`, '#ef4444');
             } else {
-                showFloatingMessage(`💥 Poder lanzado, pero no impactó enemigos.`, '#facc15');
+                showFloatingMessage(`💥 Poder lanzado en esa dirección, pero no impactó enemigos.`, '#facc15');
             }
 
             playerPowerState.hasDestructionPower = false;
@@ -724,9 +724,7 @@ if (!canvas || !ctx) {
             else nearestDangerAngle = Math.PI / 2;
         }
 
-        const isPlayerHidden = adminInvisible || playerRef.invisibilityTimer > 0;
-        // Si el jugador es fantasma pero el bot NO es fantasma, no representa peligro directo de choque inmediato
-        if (playerRef.alive && !isPlayerHidden) {
+        if (playerRef.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distHead = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
             if (distHead < bot.safetyMargin) {
                 riskScore += (bot.safetyMargin - distHead) * 0.07;
@@ -746,10 +744,6 @@ if (!canvas || !ctx) {
         const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
         for (const other of nearbyEntities) {
             if (other === bot || !other.alive) continue;
-            const otherIsHidden = other.invisibilityTimer > 0;
-            const botIsHidden = bot.invisibilityTimer > 0;
-            if (otherIsHidden !== botIsHidden) continue; // Si uno es fantasma y otro no, se ignoran
-
             const distBotHead = Math.hypot(other.x - bot.x, other.y - bot.y);
             if (distBotHead < bot.safetyMargin * 0.6) {
                 riskScore += 2.5;
@@ -781,11 +775,11 @@ if (!canvas || !ctx) {
 
         const isMaxedOut = bot.maxSegments >= MAX_SEGMENTS_LIMIT;
 
-        // Prioridad 1: Cajas especiales
+        // PRIORIDAD 1: Las cajas especiales (Rapidez, Imán, Poder, etc.) para que vayan por ellas activamente
         for (const box of specialBoxes) {
             const dist = Math.hypot(box.x - bot.x, box.y - bot.y);
             if (dist < 900) {
-                let score = 420 - dist;
+                let score = 420 - dist; // Alta prioridad de búsqueda
                 if (score > highestScore) {
                     highestScore = score;
                     bestObjective = { x: box.x, y: box.y, type: 'special_box' };
@@ -793,9 +787,7 @@ if (!canvas || !ctx) {
             }
         }
 
-        const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
-        // Solo ataca al jugador si no está en modo fantasma (o si el bot también lo está)
-        if (!isMaxedOut && player.alive && (!isPlayerHidden || bot.invisibilityTimer > 0)) {
+        if (!isMaxedOut && player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
             if (distPlayer < 900) {
                 const playerAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
@@ -870,7 +862,6 @@ if (!canvas || !ctx) {
             cachedObjective: null,
             magnetTimer: 0,
             speedBoostTimer: 0,
-            invisibilityTimer: 0,
             hasDestructionPower: false,
             powerTimer: 0
         });
@@ -949,13 +940,12 @@ if (!canvas || !ctx) {
         }
     }
 
-    function drawOrganicBody(ctx, trail, fixedRadius, skin, hasMagnet = false, isGhost = false) {
+    function drawOrganicBody(ctx, trail, fixedRadius, skin, hasMagnet = false) {
         for (let i = trail.length - 1; i >= 0; i -= 2) {
             const p = trail[i];
             if (!p) continue;
             ctx.save();
             ctx.translate(p.x, p.y);
-            if (isGhost) ctx.globalAlpha = 0.35;
             if (hasMagnet) {
                 ctx.shadowColor = '#ec4899';
                 ctx.shadowBlur = 12;
@@ -968,11 +958,10 @@ if (!canvas || !ctx) {
         }
     }
 
-    function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score, hasMagnet = false, isGhost = false) {
+    function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score, hasMagnet = false) {
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
-        if (isGhost) ctx.globalAlpha = 0.35;
         if (hasMagnet) {
             ctx.shadowColor = '#ec4899';
             ctx.shadowBlur = 22;
@@ -996,7 +985,6 @@ if (!canvas || !ctx) {
         ctx.restore();
 
         ctx.save();
-        if (isGhost) ctx.globalAlpha = 0.8;
         const labelText = `$${score.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         ctx.font = 'bold 13px sans-serif';
         const textWidth = ctx.measureText(labelText).width;
@@ -1012,10 +1000,7 @@ if (!canvas || !ctx) {
         ctx.fillText(labelText, x, y - radius - 18);
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 11px sans-serif';
-        let displayName = name;
-        if (isGhost) displayName += ' (👻)';
-        if (hasMagnet) displayName += ' (🧲)';
-        ctx.fillText(displayName, x, y - radius - 42);
+        ctx.fillText(hasMagnet ? `${name} (🧲)` : name, x, y - radius - 42);
         ctx.restore();
     }
 
@@ -1089,11 +1074,11 @@ if (!canvas || !ctx) {
                         showFloatingMessage("⚡ ¡Caja de Rapidez recogida con Imán!", "#0ea5e9");
                     } else if (box.type === 'invisibility') {
                         playerPowerState.invisibilityTimer = 7.0;
-                        showFloatingMessage("👻 ¡Caja Fantasma recogida con Imán!", "#8b5cf6");
+                        showFloatingMessage("👻 ¡Caja de Invisibilidad recogida con Imán!", "#8b5cf6");
                     } else if (box.type === 'power') {
                         playerPowerState.hasDestructionPower = true;
                         playerPowerState.powerTimer = 7.0;
-                        showFloatingMessage("💥 ¡Caja Destrucción recogida con Imán!", "#ef4444");
+                        showFloatingMessage("💥 ¡Poder Destructor obtenido con Imán!", "#ef4444");
                     } else if (box.type === 'magnet') {
                         playerPowerState.magnetTimer = 12.0;
                         showFloatingMessage("🧲 ¡Duración de Imán extendida!", "#ec4899");
@@ -1101,7 +1086,6 @@ if (!canvas || !ctx) {
                 } else {
                     if (box.type === 'magnet') entity.magnetTimer = 12.0;
                     else if (box.type === 'speed') entity.speedBoostTimer = 7.0;
-                    else if (box.type === 'invisibility') entity.invisibilityTimer = 7.0;
                     else if (box.type === 'power') {
                         entity.hasDestructionPower = true;
                         entity.powerTimer = 7.0;
@@ -1139,7 +1123,7 @@ if (!canvas || !ctx) {
             playerPowerState.powerTimer -= 1/60;
             if (playerPowerState.powerTimer <= 0) {
                 playerPowerState.hasDestructionPower = false;
-                showFloatingMessage("💥 El poder de destrucción ha expirado.", "#64748b");
+                showFloatingMessage("💥 El poder destructor ha expirado.", "#64748b");
             }
         }
 
@@ -1225,11 +1209,11 @@ if (!canvas || !ctx) {
                     showFloatingMessage("⚡ ¡Caja de Rapidez recogida!", "#0ea5e9");
                 } else if (box.type === 'invisibility') {
                     playerPowerState.invisibilityTimer = 7.0;
-                    showFloatingMessage("👻 ¡Modo Fantasma activado!", "#8b5cf6");
+                    showFloatingMessage("👻 ¡Caja de Invisibilidad recogida!", "#8b5cf6");
                 } else if (box.type === 'power') {
                     playerPowerState.hasDestructionPower = true;
                     playerPowerState.powerTimer = 7.0;
-                    showFloatingMessage("💥 ¡Caja de Destrucción obtenida!", "#ef4444");
+                    showFloatingMessage("💥 ¡Poder Destructor obtenido!", "#ef4444");
                 } else if (box.type === 'magnet') {
                     playerPowerState.magnetTimer = 12.0;
                     showFloatingMessage("🧲 ¡Caja Imán recogida!", "#ec4899");
@@ -1243,8 +1227,6 @@ if (!canvas || !ctx) {
                 if (bot.alive && Math.hypot(bot.x - box.x, bot.y - box.y) < bot.radius + box.radius) {
                     if (box.type === 'speed') {
                         bot.speedBoostTimer = 7.0;
-                    } else if (box.type === 'invisibility') {
-                        bot.invisibilityTimer = 7.0;
                     } else if (box.type === 'magnet') {
                         bot.magnetTimer = 12.0;
                     } else if (box.type === 'power') {
@@ -1285,7 +1267,7 @@ if (!canvas || !ctx) {
         }
 
         // =====================================================================
-        // BUCLE DE BOTS CON IA, PODERES Y REGLAS DE FANTASMA / DESTRUCCIÓN
+        // BUCLE DE BOTS CON BÚSQUEDA DE CAJAS, IMÁN Y VELOCIDAD ACTIVA
         // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
@@ -1298,36 +1280,9 @@ if (!canvas || !ctx) {
             if (bot.speedBoostTimer > 0) {
                 bot.speedBoostTimer -= 1/60;
             }
-            if (bot.invisibilityTimer > 0) {
-                bot.invisibilityTimer -= 1/60;
-            }
             if (bot.powerTimer > 0) {
                 bot.powerTimer -= 1/60;
                 if (bot.powerTimer <= 0) bot.hasDestructionPower = false;
-            }
-
-            // Uso automático de Caja de Destrucción por parte del bot (contra cualquier enemigo excepto él mismo)
-            if (bot.hasDestructionPower && bot.powerTimer > 0) {
-                for (let j = bots.length - 1; j >= 0; j--) {
-                    const targetBot = bots[j];
-                    if (targetBot === bot || !targetBot.alive) continue;
-                    const distToTarget = Math.hypot(targetBot.x - bot.x, targetBot.y - bot.y);
-                    const angleToTarget = Math.atan2(targetBot.y - bot.y, targetBot.x - bot.x);
-                    const angleDiff = Math.abs(normalizeAngle(angleToTarget - bot.angle));
-
-                    // Si tiene un bot enemigo enfrente a menos de 450px, dispara su poder destructor
-                    if (distToTarget < 450 && angleDiff < 0.8) {
-                        createCoinsOrPelletsFromBotDeath(targetBot.trail, targetBot.score);
-                        const deadName = targetBot.name;
-                        const deadSkin = targetBot.skin;
-                        bots.splice(j, 1);
-                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
-                        bot.hasDestructionPower = false;
-                        bot.powerTimer = 0;
-                        showFloatingMessage(`💥 ¡${bot.name} usó Poder de Destrucción contra ${deadName}!`, '#ef4444');
-                        break;
-                    }
-                }
             }
 
             if (!bot.cachedObjective || (frameCount % 15 === (bIndex % 15))) {
@@ -1345,6 +1300,7 @@ if (!canvas || !ctx) {
             bot.angle += normalizeAngle(targetAngle - bot.angle) * 0.16;
             bot.angle = normalizeAngle(bot.angle);
 
+            // Velocidad real del bot (se acelera si tiene la caja de rapidez activa)
             const currentBotSpeed = bot.speedBoostTimer > 0 ? bot.baseSpeed * 1.8 : bot.baseSpeed;
 
             bot.x += Math.cos(bot.angle) * currentBotSpeed;
@@ -1359,30 +1315,22 @@ if (!canvas || !ctx) {
             bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
             if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-            // REGLAS DE COLISIÓN DE FANTASMA:
-            // - Admin invisible: Admin no puede ser dañado por nadie bajo ninguna circunstancia.
-            // - Jugador fantasma vs Bot normal: No hay daño (incompatibles).
-            // - Jugador fantasma vs Bot fantasma: Sí hay daño (fantasma con fantasma).
             const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
-            const isBotHidden = bot.invisibilityTimer > 0;
 
             // 1. Colisión Bot vs Jugador
-            if (player.alive && isGameActive && !adminInvisible && !player.invincible) {
-                // Solo colisionan si ambos comparten el mismo estado de invisibilidad (normal vs normal, o fantasma vs fantasma)
-                if (isPlayerHidden === isBotHidden) {
-                    for (let i = 0; i < player.trail.length - 10; i++) {
-                        const seg = player.trail[i];
-                        if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + player.radius * 0.6) {
-                            createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
-                            showFloatingMessage(`💥 ¡${bot.name} chocó contra ti y murió!`, '#10b981');
-                            const deadName = bot.name;
-                            const deadSkin = bot.skin;
-                            bots.splice(bIndex, 1);
-                            setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
-                            bot.alive = false;
-                            updateAdminBotSelect();
-                            break;
-                        }
+            if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
+                for (let i = 0; i < player.trail.length - 10; i++) {
+                    const seg = player.trail[i];
+                    if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + player.radius * 0.6) {
+                        createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
+                        showFloatingMessage(`💥 ¡${bot.name} chocó contra ti y murió!`, '#10b981');
+                        const deadName = bot.name;
+                        const deadSkin = bot.skin;
+                        bots.splice(bIndex, 1);
+                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
+                        bot.alive = false;
+                        updateAdminBotSelect();
+                        break;
                     }
                 }
             }
@@ -1393,24 +1341,20 @@ if (!canvas || !ctx) {
             const nearbyForCollision = entityGrid.getNearby(bot.x, bot.y);
             for (const otherBot of nearbyForCollision) {
                 if (otherBot === bot || !otherBot.alive || otherBot === player) continue;
-                const otherBotHidden = otherBot.invisibilityTimer > 0;
 
-                // Fantasma con fantasma se hace daño; normal con normal también. Fantasma con normal se atraviesan.
-                if (isBotHidden === otherBotHidden) {
-                    for (let i = 0; i < otherBot.trail.length - 10; i++) {
-                        const seg = otherBot.trail[i];
-                        if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + otherBot.radius * 0.6) {
-                            createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
-                            otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 10);
-                            showFloatingMessage(`💥 ${bot.name} chocó contra el cuerpo de ${otherBot.name}.`, '#64748b');
-                            const deadName = bot.name;
-                            const deadSkin = bot.skin;
-                            bots.splice(bIndex, 1);
-                            setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
-                            botDiedByOther = true;
-                            updateAdminBotSelect();
-                            break;
-                        }
+                for (let i = 0; i < otherBot.trail.length - 10; i++) {
+                    const seg = otherBot.trail[i];
+                    if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + otherBot.radius * 0.6) {
+                        createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
+                        otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 10);
+                        showFloatingMessage(`💥 ${bot.name} chocó contra el cuerpo de ${otherBot.name}.`, '#64748b');
+                        const deadName = bot.name;
+                        const deadSkin = bot.skin;
+                        bots.splice(bIndex, 1);
+                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
+                        botDiedByOther = true;
+                        updateAdminBotSelect();
+                        break;
                     }
                 }
                 if (botDiedByOther) break;
@@ -1418,40 +1362,75 @@ if (!canvas || !ctx) {
             if (botDiedByOther) continue;
 
             // 3. Colisión Jugador vs Cuerpo de este Bot
-            if (player.alive && isGameActive && !adminInvisible && !player.invincible) {
-                if (isPlayerHidden === isBotHidden) {
-                    for (let i = 0; i < bot.trail.length - 10; i++) {
-                        const seg = bot.trail[i];
-                        if (Math.hypot(player.x - seg.x, player.y - seg.y) < player.radius + bot.radius * 0.6) {
-                            player.alive = false;
-                            isGameActive = false;
-                            bot.score += 1;
-                            bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
-                            createGoldCoinsFromPlayerDeath(player.trail, player.score);
-                            showFloatingMessage(`💥 ¡Chocaste contra el cuerpo de ${bot.name}!`, '#ef4444');
-                            const gallery = document.getElementById('skinGallery');
-                            if (gallery) gallery.style.display = 'block';
-                            updateAdminBotSelect();
-                            break;
-                        }
+            if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
+                for (let i = 0; i < bot.trail.length - 10; i++) {
+                    const seg = bot.trail[i];
+                    if (Math.hypot(player.x - seg.x, player.y - seg.y) < player.radius + bot.radius * 0.6) {
+                        player.alive = false;
+                        isGameActive = false;
+                        bot.score += 1;
+                        bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
+                        createGoldCoinsFromPlayerDeath(player.trail, player.score);
+                        showFloatingMessage(`💥 ¡Chocaste contra el cuerpo de ${bot.name}!`, '#ef4444');
+                        const gallery = document.getElementById('skinGallery');
+                        if (gallery) gallery.style.display = 'block';
+                        updateAdminBotSelect();
+                        break;
                     }
                 }
             }
 
             if (bot.alive) {
                 const hasBotMagnet = bot.magnetTimer > 0;
-                drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin, hasBotMagnet, isBotHidden);
-                drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score, hasBotMagnet, isBotHidden);
+                drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin, hasBotMagnet);
+                drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score, hasBotMagnet);
             }
         }
 
-        // Renderizado del Jugador (Si el admin está en modo fantasma absoluto, no se dibuja para nadie en la arena excepto para su propia cámara si está en modo libre, o se muestra translúcido si tiene caja fantasma)
         if (player.alive && isGameActive) {
             const lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-            const isPlayerGhost = playerPowerState.invisibilityTimer > 0;
+            const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
             const hasPlayerMagnet = playerPowerState.magnetTimer > 0;
+            if (!isPlayerHidden) {
+                drawOrganicBody(ctx, player.trail, player.radius, player.skin, hasPlayerMagnet);
+                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score, hasPlayerMagnet);
+            } else {
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                drawOrganicBody(ctx, player.trail, player.radius, player.skin, hasPlayerMagnet);
+                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, `${player.name} (👻)`, player.score, hasPlayerMagnet);
+                ctx.restore();
+            }
+        }
 
-            // Si el admin está activo con adminInvisible, es completamente invisible para todos.
-            if (!adminInvisible) {
-                drawOrganicBody(ctx, player.trail, player.radius, player.skin, hasPlayerMagnet, isPlayerGhost);
-                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name
+        ctx.restore();
+
+        const progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
+        const barFill = document.getElementById('cashBarFill');
+        if (barFill) barFill.style.width = `${progress}%`;
+
+        const cashOutBtn = document.getElementById('cashOutBtn');
+        if (cashOutBtn) {
+            if (player.score >= player.cashOutGoal) {
+                cashOutBtn.disabled = false;
+                cashOutBtn.style.opacity = '1';
+                cashOutBtn.style.cursor = 'pointer';
+                cashOutBtn.style.background = '#eab308';
+                cashOutBtn.style.color = '#000';
+            } else {
+                cashOutBtn.disabled = true;
+                cashOutBtn.style.opacity = '0.5';
+                cashOutBtn.style.cursor = 'not-allowed';
+                cashOutBtn.style.background = '#64748b';
+                cashOutBtn.style.color = '#fff';
+            }
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    syncBcvRate();
+    setTimeout(syncUserWallet, 1500);
+    initSupabase();
+    requestAnimationFrame(gameLoop);
+}
