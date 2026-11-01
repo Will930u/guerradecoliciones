@@ -36,7 +36,6 @@ if (!canvas || !ctx) {
 
     window.currentBcvRate = 36.5;
 
-    // Estados de Poderes Especiales del Jugador
     let playerPowerState = {
         speedBoostTimer: 0,
         invisibilityTimer: 0,
@@ -483,7 +482,6 @@ if (!canvas || !ctx) {
                         cashOutCheckInterval = null;
                         showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado! Ref: ${tx.reference_number}`, '#10b981');
                         
-                        // PURGA TOTAL DEL ESTADO DEL JUGADOR
                         player.score = 0;
                         player.alive = false;
                         player.isSpectator = false;
@@ -571,7 +569,6 @@ if (!canvas || !ctx) {
         return angle;
     }
 
-    // Disparo del Poder Destructor de 7 segundos con clic izquierdo
     window.addEventListener('mousedown', (event) => {
         if (!player.alive || !isGameActive) return;
         if (playerPowerState.hasDestructionPower && playerPowerState.powerTimer > 0) {
@@ -608,7 +605,7 @@ if (!canvas || !ctx) {
     });
 
     // =========================================================================
-    // MOTOR DE INTELIGENCIA ARTIFICIAL DE BOTS AVANZADO (MULTICAPA Y TÁCTICO)
+    // MOTOR DE IA ANTIBUCLE (MOVIMIENTO FLUIDO Y CONTINUO)
     // =========================================================================
 
     function getAdvancedBotRisk(bot, playerRef, botList) {
@@ -616,8 +613,8 @@ if (!canvas || !ctx) {
         let nearestDangerAngle = null;
 
         const wallDistMin = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
-        if (wallDistMin < 180) {
-            riskScore += (180 - wallDistMin) * 0.08; 
+        if (wallDistMin < 220) {
+            riskScore += (220 - wallDistMin) * 0.05; 
             if (wallDistMin === bot.x) nearestDangerAngle = Math.PI;
             else if (wallDistMin === WORLD_WIDTH - bot.x) nearestDangerAngle = 0;
             else if (wallDistMin === bot.y) nearestDangerAngle = -Math.PI / 2;
@@ -627,14 +624,14 @@ if (!canvas || !ctx) {
         if (playerRef.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distHead = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
             if (distHead < bot.safetyMargin) {
-                riskScore += (bot.safetyMargin - distHead) * 0.05;
+                riskScore += (bot.safetyMargin - distHead) * 0.04;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(playerRef.y - bot.y, playerRef.x - bot.x);
             }
-            for (let i = 0; i < playerRef.trail.length; i += 3) {
+            for (let i = 0; i < playerRef.trail.length; i += 4) {
                 const seg = playerRef.trail[i];
                 const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
-                if (distSeg < bot.safetyMargin * 0.75) {
-                    riskScore += 3.5;
+                if (distSeg < bot.safetyMargin * 0.7) {
+                    riskScore += 2.5;
                     nearestDangerAngle = Math.atan2(seg.y - bot.y, seg.x - bot.x);
                     break;
                 }
@@ -644,18 +641,9 @@ if (!canvas || !ctx) {
         for (const other of botList) {
             if (other === bot || !other.alive) continue;
             const distBotHead = Math.hypot(other.x - bot.x, other.y - bot.y);
-            if (distBotHead < bot.safetyMargin * 0.8) {
-                riskScore += 2.0;
+            if (distBotHead < bot.safetyMargin * 0.7) {
+                riskScore += 1.5;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(other.y - bot.y, other.x - bot.x);
-            }
-            for (let i = 0; i < other.trail.length; i += 4) {
-                const seg = other.trail[i];
-                const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
-                if (distSeg < bot.safetyMargin * 0.6) {
-                    riskScore += 3.0;
-                    nearestDangerAngle = Math.atan2(seg.y - bot.y, seg.x - bot.x);
-                    break;
-                }
             }
         }
 
@@ -674,11 +662,8 @@ if (!canvas || !ctx) {
 
         for (const coin of goldCoins) {
             const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
-            if (dist < 700) {
-                const distPlayerToCoin = player.alive ? Math.hypot(coin.x - player.x, coin.y - player.y) : 999;
-                let score = 250 - dist + (coin.value * 40);
-                if (distPlayerToCoin < 350) score += 80;
-
+            if (dist < 800) {
+                let score = 300 - dist + (coin.value * 50);
                 if (score > highestScore) {
                     highestScore = score;
                     bestObjective = { x: coin.x, y: coin.y, type: 'coin' };
@@ -686,11 +671,11 @@ if (!canvas || !ctx) {
             }
         }
 
-        if (!bestObjective || highestScore < 100) {
+        if (!bestObjective || highestScore < 120) {
             for (const pellet of foodPellets) {
                 const dist = Math.hypot(pellet.x - bot.x, pellet.y - bot.y);
-                if (dist < 400) {
-                    const score = 150 - dist;
+                if (dist < 500) {
+                    const score = 200 - dist;
                     if (score > highestScore) {
                         highestScore = score;
                         bestObjective = { x: pellet.x, y: pellet.y, type: 'food' };
@@ -699,23 +684,19 @@ if (!canvas || !ctx) {
             }
         }
 
-        if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0)) && bot.aggression > 0.6) {
+        if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0)) && bot.aggression > 0.5) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
-            const playerAngle = Math.atan2(player.y - bot.y, player.x - bot.x);
-            const angleDiff = Math.abs(normalizeAngle(playerAngle - bot.angle));
-
-            if (distPlayer < 320 && angleDiff < 0.7 && riskScore < 2.0) {
-                const attackTargetX = player.x + Math.cos(player.angle || 0) * 80;
-                const attackTargetY = player.y + Math.sin(player.angle || 0) * 80;
-                return { x: attackTargetX, y: attackTargetY, type: 'attack_pass' };
+            if (distPlayer < 350 && riskScore < 1.8) {
+                return { x: player.x, y: player.y, type: 'attack_pass' };
             }
         }
 
         if (bestObjective) return bestObjective;
 
+        // Exploración en avance continuo si no hay objetivos cercanos
         return {
-            x: bot.x + Math.cos(bot.angle) * 300,
-            y: bot.y + Math.sin(bot.angle) * 300,
+            x: bot.x + Math.cos(bot.angle) * 400,
+            y: bot.y + Math.sin(bot.angle) * 400,
             type: 'wander'
         };
     }
@@ -735,15 +716,15 @@ if (!canvas || !ctx) {
             y: sy,
             radius: 18,
             maxSegments: INITIAL_SEGMENTS,
-            speed: 4.5 + Math.random() * 1.2,
+            speed: 5.0 + Math.random() * 1.0,
             angle: sAngle,
             changeTimer: 0,
             trail: [],
             score: 0,
             alive: true,
-            aggression: 0.3 + Math.random() * 0.5,
-            safetyMargin: 180 + Math.random() * 100,
-            riskTolerance: 2.5 + Math.random() * 2.0
+            aggression: 0.4 + Math.random() * 0.4,
+            safetyMargin: 160 + Math.random() * 80,
+            riskTolerance: 3.0 + Math.random() * 1.5
         });
     }
 
@@ -878,7 +859,6 @@ if (!canvas || !ctx) {
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Descontar temporizadores de poderes activos (7 segundos de duración)
         if (playerPowerState.speedBoostTimer > 0) playerPowerState.speedBoostTimer -= 1/60;
         if (playerPowerState.invisibilityTimer > 0) playerPowerState.invisibilityTimer -= 1/60;
         if (playerPowerState.hasDestructionPower && playerPowerState.powerTimer > 0) {
@@ -921,7 +901,6 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
-        // Pellets de comida y acumulador de 100 puntos
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
@@ -946,7 +925,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // Renderizado y recolección de Cajas Especiales
         for (let i = specialBoxes.length - 1; i >= 0; i--) {
             const box = specialBoxes[i];
             ctx.save();
@@ -1001,7 +979,7 @@ if (!canvas || !ctx) {
             if (coinEaten) continue;
         }
 
-        // BUCLE PRINCIPAL DE BOTS CON IA INTEGRADA
+        // BUCLE DE BOTS CON MOVIMIENTO FRONTAL CONSTANTE (ANTI-ENROSQUE)
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
@@ -1013,22 +991,25 @@ if (!canvas || !ctx) {
 
             if (objective.type === 'evade' && nearestDangerAngle !== null) {
                 targetAngle = normalizeAngle(nearestDangerAngle + Math.PI);
-            } else if (objective.type === 'attack_pass') {
-                targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             } else {
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             }
 
+            // Giro suave sin tirones excesivos
             const angleDiff = normalizeAngle(targetAngle - bot.angle);
-            bot.angle += angleDiff * 0.16;
+            bot.angle += angleDiff * 0.10; // Factor de giro más suave para evitar bucles cerrados
             bot.angle = normalizeAngle(bot.angle);
 
-            const currentSpeed = (objective.type === 'attack_pass') ? bot.speed * 1.25 : bot.speed;
-            bot.x += Math.cos(bot.angle) * currentSpeed;
-            bot.y += Math.sin(bot.angle) * currentSpeed;
+            // GARANTIZAR VELOCIDAD CONSTANTE HACIA ADELANTE
+            bot.x += Math.cos(bot.angle) * bot.speed;
+            bot.y += Math.sin(bot.angle) * bot.speed;
 
-            bot.x = Math.max(40, Math.min(WORLD_WIDTH - 40, bot.x));
-            bot.y = Math.max(40, Math.min(WORLD_HEIGHT - 40, bot.y));
+            // Rebote limpio y seguro en los bordes del mapa sin atascarse
+            const margin = 60;
+            if (bot.x < margin) { bot.x = margin; bot.angle = 0; }
+            if (bot.x > WORLD_WIDTH - margin) { bot.x = WORLD_WIDTH - margin; bot.angle = Math.PI; }
+            if (bot.y < margin) { bot.y = margin; bot.angle = Math.PI / 2; }
+            if (bot.y > WORLD_HEIGHT - margin) { bot.y = WORLD_HEIGHT - margin; bot.angle = -Math.PI / 2; }
 
             bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
             if (bot.trail.length > bot.maxSegments) bot.trail.shift();
