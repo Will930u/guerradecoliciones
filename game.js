@@ -482,12 +482,15 @@ if (!canvas || !ctx) {
                         clearInterval(cashOutCheckInterval);
                         cashOutCheckInterval = null;
                         showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado! Ref: ${tx.reference_number}`, '#10b981');
+                        
+                        // PURGA TOTAL DEL ESTADO DEL JUGADOR
                         player.score = 0;
                         player.alive = false;
                         player.isSpectator = false;
                         isGameActive = false;
                         player.maxSegments = INITIAL_SEGMENTS;
                         player.trail = [];
+                        
                         const gallery = document.getElementById('skinGallery');
                         if (gallery) gallery.style.display = 'block';
                     }
@@ -568,16 +571,14 @@ if (!canvas || !ctx) {
         return angle;
     }
 
-    // Lógica para disparar el Poder Destructor de 7s (al hacer click izquierdo en partida con poder activo)
+    // Disparo del Poder Destructor de 7 segundos con clic izquierdo
     window.addEventListener('mousedown', (event) => {
         if (!player.alive || !isGameActive) return;
         if (playerPowerState.hasDestructionPower && playerPowerState.powerTimer > 0) {
-            // Activar poder destructor en dirección del mouse/click
             const screenCenterX = canvas.width / 2;
             const screenCenterY = canvas.height / 2;
             const clickAngle = Math.atan2(event.clientY - screenCenterY, event.clientX - screenCenterX);
 
-            // Destruir bots cercanos en esa dirección de disparo (cono de 60 grados y rango de 500px)
             let destroyedCount = 0;
             for (let i = bots.length - 1; i >= 0; i--) {
                 const b = bots[i];
@@ -598,10 +599,9 @@ if (!canvas || !ctx) {
             if (destroyedCount > 0) {
                 showFloatingMessage(`💥 ¡Poder Destructor lanzado! (${destroyedCount} enemigos eliminados)`, '#ef4444');
             } else {
-                showFloatingMessage(`💥 Poder lanzado, pero no impactó a ningún enemigo.`, '#facc15');
+                showFloatingMessage(`💥 Poder lanzado en esa dirección, pero no impactó enemigos.`, '#facc15');
             }
 
-            // Consumir el poder
             playerPowerState.hasDestructionPower = false;
             playerPowerState.powerTimer = 0;
         }
@@ -878,7 +878,7 @@ if (!canvas || !ctx) {
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Actualización de temporizadores de poderes del jugador (7 segundos de duración)
+        // Descontar temporizadores de poderes activos (7 segundos de duración)
         if (playerPowerState.speedBoostTimer > 0) playerPowerState.speedBoostTimer -= 1/60;
         if (playerPowerState.invisibilityTimer > 0) playerPowerState.invisibilityTimer -= 1/60;
         if (playerPowerState.hasDestructionPower && playerPowerState.powerTimer > 0) {
@@ -903,7 +903,6 @@ if (!canvas || !ctx) {
             const screenCenterY = canvas.height / 2;
             const angle = Math.atan2(mouse.y - screenCenterY, mouse.x - screenCenterX);
             
-            // Aplicar velocidad aumentada si el boost está activo
             const currentActualSpeed = playerPowerState.speedBoostTimer > 0 ? player.speed * 1.8 : player.speed;
 
             player.x += Math.cos(angle) * currentActualSpeed;
@@ -922,7 +921,7 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
-        // Render y colisión con pellets de comida (puntos de crecimiento)
+        // Pellets de comida y acumulador de 100 puntos
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
@@ -930,11 +929,9 @@ if (!canvas || !ctx) {
             if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
                 if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += 1;
                 
-                // Conteo de puntos de crecimiento para la caja sorpresa (100 puntos)
                 playerPowerState.growthPointsEaten += 1;
                 if (playerPowerState.growthPointsEaten >= 100) {
                     playerPowerState.growthPointsEaten = 0;
-                    // Soltar caja sorpresa enfrente del jugador
                     const lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
                     const dropX = player.x + Math.cos(lastAngle) * 70;
                     const dropY = player.y + Math.sin(lastAngle) * 70;
@@ -949,7 +946,7 @@ if (!canvas || !ctx) {
             }
         }
 
-        // Render y colisión con Cajas de Regalos Especiales
+        // Renderizado y recolección de Cajas Especiales
         for (let i = specialBoxes.length - 1; i >= 0; i--) {
             const box = specialBoxes[i];
             ctx.save();
@@ -964,7 +961,6 @@ if (!canvas || !ctx) {
             ctx.stroke();
             ctx.restore();
 
-            // Colisión con el jugador
             if (player.alive && isGameActive && Math.hypot(player.x - box.x, player.y - box.y) < player.radius + box.radius) {
                 if (box.type === 'speed') {
                     playerPowerState.speedBoostTimer = 7.0;
@@ -1005,7 +1001,7 @@ if (!canvas || !ctx) {
             if (coinEaten) continue;
         }
 
-        // BUCLE PRINCIPAL DE BOTS (EJECUCIÓN DE IA INTEGRADA)
+        // BUCLE PRINCIPAL DE BOTS CON IA INTEGRADA
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
@@ -1037,7 +1033,6 @@ if (!canvas || !ctx) {
             bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
             if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
-            // Verificación de colisiones jugador vs bot (respetando invisibilidad temporal o modo fantasma)
             const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
             if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
                 for (const segment of bot.trail) {
