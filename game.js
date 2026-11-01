@@ -775,6 +775,18 @@ if (!canvas || !ctx) {
 
         const isMaxedOut = bot.maxSegments >= MAX_SEGMENTS_LIMIT;
 
+        // PRIORIDAD 1: Las cajas especiales (Rapidez, Imán, Poder, etc.) para que vayan por ellas activamente
+        for (const box of specialBoxes) {
+            const dist = Math.hypot(box.x - bot.x, box.y - bot.y);
+            if (dist < 900) {
+                let score = 420 - dist; // Alta prioridad de búsqueda
+                if (score > highestScore) {
+                    highestScore = score;
+                    bestObjective = { x: box.x, y: box.y, type: 'special_box' };
+                }
+            }
+        }
+
         if (!isMaxedOut && player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
             if (distPlayer < 900) {
@@ -831,6 +843,7 @@ if (!canvas || !ctx) {
         else if (edge === 2) { sx = Math.random() * WORLD_WIDTH; sy = 50; sAngle = Math.PI / 2; }
         else { sx = Math.random() * WORLD_WIDTH; sy = WORLD_HEIGHT - 50; sAngle = -Math.PI / 2; }
 
+        const calculatedSpeed = 5.2 + Math.random() * 1.0;
         bots.push({
             name,
             skin,
@@ -838,7 +851,8 @@ if (!canvas || !ctx) {
             y: sy,
             radius: 18,
             maxSegments: INITIAL_SEGMENTS,
-            speed: 5.2 + Math.random() * 1.0,
+            speed: calculatedSpeed,
+            baseSpeed: calculatedSpeed,
             angle: sAngle,
             trail: [],
             score: 0,
@@ -846,7 +860,10 @@ if (!canvas || !ctx) {
             safetyMargin: 160 + Math.random() * 40,
             riskTolerance: 3.2 + Math.random() * 0.8,
             cachedObjective: null,
-            magnetTimer: 0
+            magnetTimer: 0,
+            speedBoostTimer: 0,
+            hasDestructionPower: false,
+            powerTimer: 0
         });
     }
 
@@ -987,11 +1004,9 @@ if (!canvas || !ctx) {
         ctx.restore();
     }
 
-    // SISTEMA DE IMÁN: Absorbe puntos, monedas y cajas en todo el cuerpo y cabeza
     function applyMagnetEffect(entity, isPlayer = false) {
-        const magnetRadius = 240; // Radio de atracción del imán alrededor de cabeza y segmentos
+        const magnetRadius = 240;
 
-        // 1. Absorber comida (pellets)
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             let absorbed = false;
@@ -1017,7 +1032,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 2. Absorber monedas de oro
         for (let i = goldCoins.length - 1; i >= 0; i--) {
             const coin = goldCoins[i];
             let absorbed = false;
@@ -1040,7 +1054,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 3. Absorber cajas especiales
         for (let i = specialBoxes.length - 1; i >= 0; i--) {
             const box = specialBoxes[i];
             let absorbed = false;
@@ -1073,6 +1086,10 @@ if (!canvas || !ctx) {
                 } else {
                     if (box.type === 'magnet') entity.magnetTimer = 12.0;
                     else if (box.type === 'speed') entity.speedBoostTimer = 7.0;
+                    else if (box.type === 'power') {
+                        entity.hasDestructionPower = true;
+                        entity.powerTimer = 7.0;
+                    }
                 }
                 specialBoxes.splice(i, 1);
             }
@@ -1142,7 +1159,6 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
-        // Recolección normal por contacto directo con la cabeza (si no están siendo absorbidos por imán)
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
@@ -1170,6 +1186,7 @@ if (!canvas || !ctx) {
             if (pelletEaten) continue;
         }
 
+        // Colisión y dibujo de Cajas Especiales (para Jugador y Bots)
         for (let i = specialBoxes.length - 1; i >= 0; i--) {
             const box = specialBoxes[i];
             ctx.save();
@@ -1184,6 +1201,8 @@ if (!canvas || !ctx) {
             ctx.stroke();
             ctx.restore();
 
+            let boxTaken = false;
+            // 1. Recogida por Jugador
             if (player.alive && isGameActive && Math.hypot(player.x - box.x, player.y - box.y) < player.radius + box.radius) {
                 if (box.type === 'speed') {
                     playerPowerState.speedBoostTimer = 7.0;
@@ -1200,7 +1219,26 @@ if (!canvas || !ctx) {
                     showFloatingMessage("🧲 ¡Caja Imán recogida!", "#ec4899");
                 }
                 specialBoxes.splice(i, 1);
+                continue;
             }
+
+            // 2. Recogida por contacto directo de Bots
+            for (const bot of bots) {
+                if (bot.alive && Math.hypot(bot.x - box.x, bot.y - box.y) < bot.radius + box.radius) {
+                    if (box.type === 'speed') {
+                        bot.speedBoostTimer = 7.0;
+                    } else if (box.type === 'magnet') {
+                        bot.magnetTimer = 12.0;
+                    } else if (box.type === 'power') {
+                        bot.hasDestructionPower = true;
+                        bot.powerTimer = 7.0;
+                    }
+                    specialBoxes.splice(i, 1);
+                    boxTaken = true;
+                    break;
+                }
+            }
+            if (boxTaken) continue;
         }
 
         for (let i = goldCoins.length - 1; i >= 0; i--) {
@@ -1229,7 +1267,7 @@ if (!canvas || !ctx) {
         }
 
         // =====================================================================
-        // BUCLE DE BOTS CON TIME-SLICING, IMÁN Y ECONOMÍA EXACTA
+        // BUCLE DE BOTS CON BÚSQUEDA DE CAJAS, IMÁN Y VELOCIDAD ACTIVA
         // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
@@ -1238,6 +1276,13 @@ if (!canvas || !ctx) {
             if (bot.magnetTimer > 0) {
                 bot.magnetTimer -= 1/60;
                 applyMagnetEffect(bot, false);
+            }
+            if (bot.speedBoostTimer > 0) {
+                bot.speedBoostTimer -= 1/60;
+            }
+            if (bot.powerTimer > 0) {
+                bot.powerTimer -= 1/60;
+                if (bot.powerTimer <= 0) bot.hasDestructionPower = false;
             }
 
             if (!bot.cachedObjective || (frameCount % 15 === (bIndex % 15))) {
@@ -1255,8 +1300,11 @@ if (!canvas || !ctx) {
             bot.angle += normalizeAngle(targetAngle - bot.angle) * 0.16;
             bot.angle = normalizeAngle(bot.angle);
 
-            bot.x += Math.cos(bot.angle) * bot.speed;
-            bot.y += Math.sin(bot.angle) * bot.speed;
+            // Velocidad real del bot (se acelera si tiene la caja de rapidez activa)
+            const currentBotSpeed = bot.speedBoostTimer > 0 ? bot.baseSpeed * 1.8 : bot.baseSpeed;
+
+            bot.x += Math.cos(bot.angle) * currentBotSpeed;
+            bot.y += Math.sin(bot.angle) * currentBotSpeed;
 
             const margin = 60;
             if (bot.x < margin) { bot.x = margin; bot.angle = 0; }
