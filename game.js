@@ -9,7 +9,7 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // ==========================================
-// [PUNTO 7] MAPA DINÁMICO / EXTENSIBLE
+// MAPA DINÁMICO / EXTENSIBLE (PUNTO 7)
 // ==========================================
 let WORLD_WIDTH = 6000;
 let WORLD_HEIGHT = 6000;
@@ -21,6 +21,7 @@ let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 // ==========================================
 const BACKEND_URL = "https://guerradecoliciones.onrender.com"; 
 let currentUserId = localStorage.getItem('supabase_user_id') || "00000000-0000-0000-0000-000000000000";
+let backendAdminId = ""; // Cargado dinámicamente desde app.py
 
 let isGameActive = false;
 const ENTRY_FEE = 2.00; 
@@ -30,10 +31,13 @@ let cashOutCheckInterval = null;
 const INITIAL_SEGMENTS = 30;
 const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20; 
 
-// Variables para el rol de Administrador controlado desde el Backend
+// Variables de Administrador y Modo Libre
 let isAdminUser = false;
 let adminInvisible = false;
-let adminPanelCollapsed = false; // [MEJORA] Estado inicial expandido/plegado
+let adminFreeCam = false;
+let adminCamX = WORLD_WIDTH / 2;
+let adminCamY = WORLD_HEIGHT / 2;
+let adminPanelCollapsed = false;
 
 let supabaseClient = null;
 async function initSupabase() {
@@ -41,11 +45,8 @@ async function initSupabase() {
         let res = await fetch(`${BACKEND_URL}/api/config`);
         let config = await res.json();
         
-        // El backend Flask valida y nos dice si el usuario actual es admin
-        if (config.admin_user_id && currentUserId === config.admin_user_id) {
-            isAdminUser = true;
-            showFloatingMessage("👑 ¡Bienvenido Administrador! Panel VIP activado.", "#38bdf8");
-            injectAdminPanel();
+        if (config.admin_user_id) {
+            backendAdminId = config.admin_user_id;
         }
 
         if (config.supabase_url && config.supabase_anon_key && window.supabase) {
@@ -55,13 +56,13 @@ async function initSupabase() {
             if (sessionData && sessionData.session && sessionData.session.user) {
                 currentUserId = sessionData.session.user.id;
                 localStorage.setItem('supabase_user_id', currentUserId);
-                
-                // Re-comprobar si al iniciar sesión coincide con el admin del backend
-                if (config.admin_user_id && currentUserId === config.admin_user_id) {
-                    isAdminUser = true;
-                    showFloatingMessage("👑 ¡Bienvenido Administrador! Panel VIP activado.", "#38bdf8");
-                    injectAdminPanel();
-                }
+            }
+            
+            // Verificación del Rol de Administrador
+            if (backendAdminId && currentUserId === backendAdminId) {
+                isAdminUser = true;
+                showFloatingMessage("👑 ¡Bienvenido Administrador! Panel VIP activado.", "#38bdf8");
+                injectAdminPanel();
             }
         }
     } catch (e) {
@@ -71,7 +72,7 @@ async function initSupabase() {
 initSupabase();
 
 // ==========================================
-// [PUNTO 11 Y 12] PANEL PLEGABLE Y FUNCIONES DE ADMINISTRADOR
+// PANEL DE ADMINISTRADOR PLEGABLE Y AVANZADO
 // ==========================================
 function injectAdminPanel() {
     if (document.getElementById('adminPanelContainer')) return;
@@ -95,8 +96,19 @@ function injectAdminPanel() {
                 <label style="font-size: 0.75rem; color: #94a3b8;">Valor del Regalo ($ USD):</label>
                 <input type="number" id="adminGiftValue" value="1.00" step="0.1" style="width: 100%; padding: 5px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px; margin-top: 3px; font-size: 0.85rem;">
             </div>
-            <button onclick="adminDropGift('chest')" style="width: 100%; padding: 7px; margin-bottom: 5px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🎁 Soltar Cofre de Regalo</button>
-            <button onclick="adminDropGift('star')" style="width: 100%; padding: 7px; margin-bottom: 8px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">⭐ Soltar Estrella Dorada</button>
+
+            <div style="margin-bottom: 8px;">
+                <label style="font-size: 0.75rem; color: #94a3b8;">Modo de entrega:</label>
+                <select id="adminDropMode" style="width: 100%; padding: 5px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px; margin-top: 3px; font-size: 0.85rem;">
+                    <option value="cursor">📍 Donde tengo el mouse/dedo</option>
+                    <option value="random">🎲 Aleatorio en el mapa</option>
+                </select>
+            </div>
+
+            <button onclick="adminDropGift('chest')" style="width: 100%; padding: 7px; margin-bottom: 5px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🎁 Soltar Cofre</button>
+            <button onclick="adminDropGift('star')" style="width: 100%; padding: 7px; margin-bottom: 8px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">⭐ Soltar Estrella</button>
+            
+            <button id="adminFreeCamBtn" onclick="toggleAdminFreeCam()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🗺️ Navegación Libre: OFF</button>
             <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">👻 Modo Fantasma: OFF</button>
             <button onclick="adminSpawnDirect()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🎮 Spawn / Entrar Directo</button>
             <button onclick="adminFreeEntry()" style="width: 100%; padding: 7px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🚀 Ingreso VIP Gratuito</button>
@@ -117,18 +129,37 @@ window.toggleAdminPanelCollapse = function() {
     }
 };
 
+window.toggleAdminFreeCam = function() {
+    if (!isAdminUser) return;
+    adminFreeCam = !adminFreeCam;
+    if (adminFreeCam) {
+        player.alive = false;
+        adminCamX = player.x;
+        adminCamY = player.y;
+    }
+    let btn = document.getElementById('adminFreeCamBtn');
+    if (btn) {
+        btn.style.background = adminFreeCam ? "#0ea5e9" : "#64748b";
+        btn.innerText = adminFreeCam ? "🗺️ Navegación Libre: ON" : "🗺️ Navegación Libre: OFF";
+    }
+    showFloatingMessage(adminFreeCam ? "🗺️ Navegación libre activada. Muévete por el mapa." : "🗺️ Navegación libre desactivada.", adminFreeCam ? "#0ea5e9" : "#10b981");
+};
+
 window.adminSpawnDirect = function() {
     if (!isAdminUser) return;
+    adminFreeCam = false;
+    let btn = document.getElementById('adminFreeCamBtn');
+    if(btn) { btn.style.background = "#64748b"; btn.innerText = "🗺️ Navegación Libre: OFF"; }
     closeModal();
     startArenaGame();
-    showFloatingMessage("🎮 Reaparición instantánea de Administrador activada.", "#06b6d4");
+    showFloatingMessage("🎮 Spawn instantáneo de Administrador.", "#06b6d4");
 };
 
 window.adminFreeEntry = function() {
     if (!isAdminUser) return;
     closeModal();
     startArenaGame();
-    showFloatingMessage("🚀 Ingreso directo a la arena sin costo (Admin VIP).", "#8b5cf6");
+    showFloatingMessage("🚀 Ingreso VIP Gratuito aplicado.", "#8b5cf6");
 };
 
 window.toggleAdminInvisible = function() {
@@ -140,31 +171,42 @@ window.toggleAdminInvisible = function() {
         btn.style.background = adminInvisible ? "#ef4444" : "#64748b";
         btn.innerText = adminInvisible ? "👻 Modo Fantasma: ON" : "👻 Modo Fantasma: OFF";
     }
-    showFloatingMessage(adminInvisible ? "👻 Modo Fantasma activado: Eres invisible e intangible." : "👻 Modo Fantasma desactivado.", adminInvisible ? "#ef4444" : "#10b981");
+    showFloatingMessage(adminInvisible ? "👻 Modo Fantasma activo." : "👻 Modo Fantasma inactivo.", adminInvisible ? "#ef4444" : "#10b981");
 };
 
 window.adminDropGift = function(type) {
-    if (!isAdminUser || !isGameActive || !player.alive) {
-        showFloatingMessage("⚠️ Debes estar jugando en la arena para soltar regalos.", "#ef4444");
-        return;
-    }
+    if (!isAdminUser) return;
     let valInput = document.getElementById('adminGiftValue');
+    let dropModeElem = document.getElementById('adminDropMode');
     let val = valInput ? parseFloat(valInput.value) || 1.00 : 1.00;
+    let dropMode = dropModeElem ? dropModeElem.value : 'cursor';
+
+    let targetX, targetY;
+    if (dropMode === 'cursor' || adminFreeCam) {
+        targetX = camera.x + mouse.x;
+        targetY = camera.y + mouse.y;
+    } else {
+        targetX = Math.random() * WORLD_WIDTH;
+        targetY = Math.random() * WORLD_HEIGHT;
+    }
 
     let color = type === 'chest' ? '#eab308' : '#facc15';
     let radius = type === 'chest' ? 10 : 8;
 
     goldCoins.push({
-        x: player.x + (Math.random() - 0.5) * 40,
-        y: player.y + (Math.random() - 0.5) * 40,
+        x: targetX,
+        y: targetY,
         radius: radius,
         color: color,
         value: val
     });
 
-    showFloatingMessage(`🎁 ¡Regalo desplegado por Admin! Valor: $${val.toFixed(2)} USD`, "#10b981");
+    showFloatingMessage(`🎁 ¡${type === 'chest' ? 'Cofre' : 'Estrella'} desplegado! ($${val.toFixed(2)})`, "#10b981");
 };
 
+// ==========================================
+// SINCRONIZACIÓN BCV Y BILLETERA
+// ==========================================
 async function syncBcvRate() {
     try {
         let response = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
@@ -204,7 +246,7 @@ async function syncUserWallet() {
 setTimeout(syncUserWallet, 1500);
 
 function startWaitingForApproval() {
-    showFloatingMessage("⏳ Pago reportado. Esperando aprobación en Telegram...", "#eab308");
+    showFloatingMessage("⏳ Pago reportado. Esperando aprobación...", "#eab308");
     
     let modalTitle = document.getElementById('modalTitle');
     if (modalTitle) modalTitle.innerText = "Verificando Pago ($2.00)";
@@ -215,7 +257,7 @@ function startWaitingForApproval() {
             <div style="text-align: center; padding: 20px;">
                 <div style="font-size: 2.5rem; margin-bottom: 10px;">⏳</div>
                 <p style="color: #eab308; font-weight: bold; font-size: 1.1rem;">Comprobante enviado al Administrador.</p>
-                <p style="font-size: 0.9rem; color: #94a3b8; margin-top: 8px;">En cuanto apruebes el pago en Telegram, entrarás al juego <strong>automáticamente</strong> sin presionar nada...</p>
+                <p style="font-size: 0.9rem; color: #94a3b8; margin-top: 8px;">En cuanto se apruebe en Telegram, entrarás automáticamente...</p>
             </div>
         `;
     }
@@ -236,7 +278,7 @@ function startWaitingForApproval() {
                 clearInterval(verificationInterval);
                 verificationInterval = null;
 
-                showFloatingMessage("¡Pago aprobado! Entrando a la arena...", "#10b981");
+                showFloatingMessage("¡Pago aprobado! Entrando...", "#10b981");
                 closeModal();
 
                 let newBalance = parseFloat(wallet.balance_usd) - ENTRY_FEE;
@@ -251,18 +293,19 @@ function startWaitingForApproval() {
                 startArenaGame();
             }
         } catch (e) {
-            console.error("Error en la verificación automática:", e);
+            console.error("Error en verificación automática:", e);
         }
     }, 3000);
 }
 
 // ==========================================
-// [PUNTO 8] SPAWN INTELIGENTE Y SEGURO
+// INICIO Y SPAWN SEGURO (PUNTO 8)
 // ==========================================
 function startArenaGame() {
     isGameActive = true;
     player.alive = true;
     player.isSpectator = false;
+    adminFreeCam = false;
     
     let spawnTarget = bots.length > 0 ? bots[Math.floor(Math.random() * bots.length)] : { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
     player.x = Math.max(300, Math.min(WORLD_WIDTH - 300, spawnTarget.x + (Math.random() - 0.5) * 600));
@@ -272,18 +315,18 @@ function startArenaGame() {
     player.maxSegments = INITIAL_SEGMENTS;
     player.trail = [];
 
-    player.invincible = (isAdminUser && adminInvisible) ? true : true;
+    player.invincible = true;
     if (!adminInvisible) {
         setTimeout(() => {
             player.invincible = false;
-            showFloatingMessage("🛡️ Escudo de entrada finalizado. ¡Estás en combate!", "#eab308");
+            showFloatingMessage("🛡️ Escudo de entrada finalizado.", "#eab308");
         }, 4000);
     }
 
     let gallery = document.getElementById('skinGallery');
     if (gallery) gallery.style.display = 'none';
     
-    showFloatingMessage(isAdminUser && adminInvisible ? "👻 Entraste en Modo Fantasma (Admin)." : "🛡️ Spawn seguro activado. ¡Protección temporal de 4s!", "#10b981");
+    showFloatingMessage("🛡️ Partida iniciada con éxito.", "#10b981");
 }
 
 async function submitPayment() {
@@ -309,14 +352,12 @@ async function submitPayment() {
     };
 
     try {
-        showFloatingMessage("Enviando comprobante al servidor...", "#eab308");
-
+        showFloatingMessage("Enviando comprobante...", "#eab308");
         let response = await fetch(`${BACKEND_URL}/api/payment/report`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-
         let result = await response.json();
 
         if (response.ok && result.success) {
@@ -327,17 +368,17 @@ async function submitPayment() {
             showFloatingMessage(result.error || "Error al registrar el pago.", "#ef4444");
         }
     } catch (error) {
-        console.error("Error al conectar con el backend:", error);
+        console.error("Error al conectar con backend:", error);
         showFloatingMessage("Error de conexión con el backend.", "#ef4444");
     }
 }
 
 // ==========================================
-// [PUNTO 10] RETIRO EN VIVO Y MODO ESPECTADOR
+// RETIRO (CASH OUT) Y MODO ESPECTADOR (PUNTO 10)
 // ==========================================
 window.attemptCashOut = function() {
     if (player.score < player.cashOutGoal) {
-        showFloatingMessage("Aún no has llenado la barra superior para retirarte.", "#ef4444");
+        showFloatingMessage("Aún no has llenado la barra para retirarte.", "#ef4444");
         return;
     }
 
@@ -347,12 +388,12 @@ window.attemptCashOut = function() {
     player.isSpectator = true;
     let secondsLeft = 10;
 
-    showFloatingMessage(`⏳ Retiro en proceso. Pasando a Modo Espectador (${secondsLeft}s)...`, "#eab308");
+    showFloatingMessage(`⏳ Retiro en proceso. Espectador (${secondsLeft}s)...`, "#eab308");
 
     player.cashOutInterval = setInterval(async () => {
         secondsLeft--;
         if (secondsLeft > 0) {
-            showFloatingMessage(`⏳ Procesando cobro en vivo... ${secondsLeft}s`, "#eab308");
+            showFloatingMessage(`⏳ Procesando cobro... ${secondsLeft}s`, "#eab308");
         } else {
             clearInterval(player.cashOutInterval);
             player.cashOutInterval = null;
@@ -372,18 +413,19 @@ window.attemptCashOut = function() {
                         bcv_rate: rate
                     })
                 });
-
                 let result = await response.json();
                 if (response.ok && result.success) {
                     startWaitingForCashOutApproval(amountUSD);
                 } else {
                     showFloatingMessage(result.error || "Error al solicitar retiro.", "#ef4444");
+                    closeModal();
                     let gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
                 }
             } catch (err) {
                 console.error("Error al solicitar retiro:", err);
-                showFloatingMessage("Error de conexión al solicitar retiro.", "#ef4444");
+                showFloatingMessage("Error de conexión.", "#ef4444");
+                closeModal();
                 let gallery = document.getElementById('skinGallery');
                 if (gallery) gallery.style.display = 'block';
             }
@@ -396,7 +438,6 @@ function startWaitingForCashOutApproval(amountUSD) {
 
     cashOutCheckInterval = setInterval(async () => {
         if (!supabaseClient || !currentUserId) return;
-
         try {
             const { data: txs } = await supabaseClient
                 .from('payment_transactions')
@@ -411,8 +452,7 @@ function startWaitingForCashOutApproval(amountUSD) {
                     clearInterval(cashOutCheckInterval);
                     cashOutCheckInterval = null;
 
-                    showFloatingMessage(`¡Retiro de $${amountUSD} USD procesado con éxito! Ref: ${tx.reference_number}`, "#10b981");
-
+                    showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado! Ref: ${tx.reference_number}`, "#10b981");
                     player.score = 0;
                     player.isSpectator = false;
                     player.maxSegments = INITIAL_SEGMENTS;
@@ -422,19 +462,19 @@ function startWaitingForCashOutApproval(amountUSD) {
                 }
             }
         } catch (e) {
-            console.error("Error en sondeo de retiro:", e);
+            console.error("Error en sondeo:", e);
         }
     }, 4000);
 }
 
 // ==========================================
-// [PUNTO 9] ABANDONO Y DESCONEXIÓN
+// ABANDONO Y DESCONEXIÓN (PUNTO 9)
 // ==========================================
 window.leaveGameVoluntarily = function() {
     if (isGameActive && player.alive) {
         if (player.score > 0) {
             createAccumulatedCoinsFromPlayer(player.trail, player.score);
-            showFloatingMessage("💥 Abandonaste la partida. Tu dinero acumulado quedó en la arena.", "#ef4444");
+            showFloatingMessage("💥 Abandonaste. Tu dinero quedó en la arena.", "#ef4444");
         } else {
             showFloatingMessage("Saliste de la partida.", "#64748b");
         }
@@ -743,7 +783,18 @@ function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (player.alive && isGameActive) {
+    // Gestión de Cámara y Movimiento
+    if (adminFreeCam) {
+        let moveSpeed = 15;
+        if (mouse.x < 100) adminCamX -= moveSpeed;
+        if (mouse.x > canvas.width - 100) adminCamX += moveSpeed;
+        if (mouse.y < 100) adminCamY -= moveSpeed;
+        if (mouse.y > canvas.height - 100) adminCamY += moveSpeed;
+
+        adminCamX = Math.max(0, Math.min(WORLD_WIDTH, adminCamX));
+        adminCamY = Math.max(0, Math.min(WORLD_HEIGHT, adminCamY));
+        camera.update(adminCamX, adminCamY);
+    } else if (player.alive && isGameActive) {
         let screenCenterX = canvas.width / 2;
         let screenCenterY = canvas.height / 2;
         let angle = Math.atan2(mouse.y - screenCenterY, mouse.x - screenCenterX);
@@ -788,7 +839,6 @@ function gameLoop() {
         ctx.beginPath(); ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2); ctx.fill();
 
         let coinEaten = false;
-
         if (player.alive && isGameActive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
             player.score += coin.value;
             if (player.maxSegments < MAX_SEGMENTS_LIMIT) {
@@ -812,9 +862,7 @@ function gameLoop() {
         if (coinEaten) continue;
     }
 
-    // ==========================================
-    // LÓGICA DE BOTS Y COLISIONES (Modo Fantasma del Admin respetado)
-    // ==========================================
+    // BOTS Y IA TÁCTICA
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -862,7 +910,6 @@ function gameLoop() {
                             isSafeToGrab = false;
                         }
                     }
-
                     if (isSafeToGrab) {
                         closestDist = d;
                         targetX = coin.x;
@@ -898,13 +945,11 @@ function gameLoop() {
                 if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
                     player.alive = false;
                     isGameActive = false;
-                    
                     bot.score += 1.00;
                     bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
 
                     createGoldCoinsFromPlayerDeath(player.trail);
-                    showFloatingMessage(`💥 ¡Colisión con ${bot.name}! Perdiste tu entrada y soltaste el pozo en la arena.`, "#ef4444");
-                    
+                    showFloatingMessage(`💥 ¡Colisión con ${bot.name}!`, "#ef4444");
                     let gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
                     break;
@@ -916,8 +961,7 @@ function gameLoop() {
             for (let segment of player.trail) {
                 if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
                     createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
-                    showFloatingMessage(`¡${bot.name} chocó contra ti y fue eliminado!`, "#10b981");
-                    
+                    showFloatingMessage(`¡${bot.name} eliminado por ti!`, "#10b981");
                     let deadName = bot.name;
                     let deadSkin = bot.skin;
                     bots.splice(bIndex, 1);
@@ -927,39 +971,13 @@ function gameLoop() {
             }
         }
 
-        for (let otherBot of bots) {
-            if (otherBot !== bot && otherBot.alive) {
-                for (let segment of otherBot.trail) {
-                    if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + otherBot.radius * 0.6) {
-                        bot.alive = false;
-                        
-                        if (bot.score > 0) {
-                            otherBot.score += bot.score;
-                        }
-                        otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 20);
-
-                        createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
-                        
-                        let deadName = bot.name;
-                        let deadSkin = bot.skin;
-                        bots.splice(bIndex, 1);
-                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
-                        break;
-                    }
-                }
-            }
-            if (!bot.alive) break;
-        }
-
         if (bot.alive) {
             drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin);
             drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
         }
     }
 
-    // ==========================================
-    // RENDERIZADO DEL JUGADOR (O FANTASMA ADMIN)
-    // ==========================================
+    // Renderizado del jugador o fantasma
     if (player.alive && isGameActive) {
         let lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
         if (!(isAdminUser && adminInvisible)) {
@@ -969,7 +987,7 @@ function gameLoop() {
             ctx.save();
             ctx.globalAlpha = 0.35;
             drawOrganicBody(ctx, player.trail, player.radius, player.skin);
-            drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name + " (👻 FANTASMA)", player.score);
+            drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name + " (👻)", player.score);
             ctx.restore();
         }
     }
