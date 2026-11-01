@@ -20,7 +20,7 @@ if (!canvas || !ctx) {
     const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20;
 
     // =========================================================================
-    // MOTOR DE CUADRÍCULA ESPACIAL (CERO LAG CON CIENTOS DE ENTIDADES)
+    // MOTOR DE CUADRÍCULA ESPACIAL (CERO LAG)
     // =========================================================================
     class SpatialGrid {
         constructor(cellSize) {
@@ -155,6 +155,26 @@ if (!canvas || !ctx) {
         panelBody.insertBefore(giftBlock, panelBody.firstChild);
     }
 
+    function updateAdminBotSelect() {
+        const select = document.getElementById('adminBotSelect');
+        if (!select) return;
+        select.innerHTML = '';
+        if (bots.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.innerText = 'No hay bots activos';
+            select.appendChild(opt);
+            return;
+        }
+        bots.forEach((b, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;
+            opt.innerText = `${b.name} ($${b.score.toFixed(2)})`;
+            select.appendChild(opt);
+        });
+    }
+    window.updateAdminBotSelect = updateAdminBotSelect;
+
     function injectAdminPanel() {
         if (document.getElementById('adminPanelContainer')) return;
         const panel = document.createElement('div');
@@ -174,10 +194,20 @@ if (!canvas || !ctx) {
                 <button onclick="adminDropSpecialBox('invisibility')" style="width: 100%; padding: 6px; margin-bottom: 4px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">👻 Caja Invisibilidad</button>
                 <button onclick="adminDropSpecialBox('power')" style="width: 100%; padding: 6px; margin-bottom: 8px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">💥 Caja Poder Destructor</button>
 
-                <div style="display: flex; gap: 5px; margin-bottom: 8px;">
-                    <button onclick="adminAddBot()" style="flex: 1; padding: 6px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.75rem;">➕ Sumar Bot</button>
-                    <button onclick="adminRemoveBot()" style="flex: 1; padding: 6px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.75rem;">➖ Quitar Bot</button>
+                <div style="font-size: 0.75rem; color: #38bdf8; margin: 4px 0; font-weight: bold;">Gestión de Bots:</div>
+                <div style="display: flex; gap: 5px; margin-bottom: 6px;">
+                    <button onclick="adminAddBot()" style="flex: 1; padding: 6px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.75rem;">➕ Sumar</button>
+                    <button onclick="adminRemoveBot()" style="flex: 1; padding: 6px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.75rem;">➖ Quitar</button>
                 </div>
+                <button onclick="adminResetAllBotsScore()" style="width: 100%; padding: 6px; margin-bottom: 8px; background: #d97706; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🔄 Reiniciar Valor Bots (0)</button>
+
+                <div style="background: rgba(30, 41, 59, 0.8); padding: 6px; border-radius: 6px; margin-bottom: 8px;">
+                    <label style="font-size: 0.7rem; color: #38bdf8; display: block; margin-bottom: 2px;">⚡ Elevar Valor a Bot Específico:</label>
+                    <select id="adminBotSelect" style="width: 100%; padding: 4px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; font-size: 0.75rem; margin-bottom: 4px;"></select>
+                    <input type="number" id="adminBotBoostValue" value="5.00" step="1" style="width: 100%; padding: 4px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 4px; font-size: 0.75rem; margin-bottom: 4px;">
+                    <button onclick="adminBoostSelectedBot()" style="width: 100%; padding: 5px; background: #10b981; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 0.75rem;">⬆️ Aumentar Valor Bot</button>
+                </div>
+
                 <button id="adminFreeCamBtn" onclick="toggleAdminFreeCam()" style="width: 100%; padding: 6px; margin-bottom: 5px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🗺️ Navegación Libre: OFF</button>
                 <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 6px; margin-bottom: 5px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">👻 Modo Fantasma: OFF</button>
                 <button onclick="adminSpawnDirect()" style="width: 100%; padding: 6px; margin-bottom: 5px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">⚡ Spawn instantáneo</button>
@@ -186,6 +216,7 @@ if (!canvas || !ctx) {
         `;
         document.body.appendChild(panel);
         ensureAdminControls();
+        updateAdminBotSelect();
     }
 
     window.toggleAdminPanelCollapse = function() {
@@ -198,6 +229,35 @@ if (!canvas || !ctx) {
         icon.innerText = collapsed ? '[-]' : '[+]';
         panel.style.width = collapsed ? '260px' : '140px';
         adminPanelCollapsed = !collapsed;
+    };
+
+    // Funciones exclusivas del Panel Admin Añadidas
+    window.adminResetAllBotsScore = function() {
+        if (!isAdminUser) return;
+        bots.forEach(b => {
+            b.score = 0;
+            b.maxSegments = INITIAL_SEGMENTS;
+        });
+        showFloatingMessage('🔄 ¡Se ha restablecido el valor de todos los bots a $0.00!', '#d97706');
+        updateAdminBotSelect();
+    };
+
+    window.adminBoostSelectedBot = function() {
+        if (!isAdminUser) return;
+        const select = document.getElementById('adminBotSelect');
+        const valInput = document.getElementById('adminBotBoostValue');
+        if (!select || !select.value) {
+            showFloatingMessage('Selecciona un bot válido.', '#ef4444');
+            return;
+        }
+        const index = parseInt(select.value);
+        const addAmount = parseFloat(valInput ? valInput.value : 5) || 5;
+        if (bots[index]) {
+            bots[index].score += addAmount;
+            bots[index].maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bots[index].maxSegments + Math.floor(addAmount * 20));
+            showFloatingMessage(`⬆️ ¡${bots.name} aumentado en +$${addAmount.toFixed(2)}!`, '#10b981');
+            updateAdminBotSelect();
+        }
     };
 
     async function initSupabase() {
@@ -273,6 +333,7 @@ if (!canvas || !ctx) {
         const botName = botNamesList[Math.floor(Math.random() * botNamesList.length)] + '_' + Math.floor(Math.random() * 99);
         spawnBorderBot(botName, skinCatalog[randomSkinKey]);
         showFloatingMessage(`➕ Bot añadido (${bots.length} totales).`, '#3b82f6');
+        updateAdminBotSelect();
     };
 
     window.adminRemoveBot = function() {
@@ -280,6 +341,7 @@ if (!canvas || !ctx) {
         if (bots.length > 0) {
             bots.pop();
             showFloatingMessage(`➖ Bot eliminado (${bots.length} restantes).`, '#ef4444');
+            updateAdminBotSelect();
         } else {
             showFloatingMessage('No hay bots para eliminar.', '#eab308');
         }
@@ -641,14 +703,10 @@ if (!canvas || !ctx) {
         }
     });
 
-    // =========================================================================
-    // IA EXPERTA: SUPERVIVENCIA ESTRICTA + CAZA AGRESIVA AL JUGADOR Y BOTS
-    // =========================================================================
     function getAdvancedBotRisk(bot, playerRef) {
         let riskScore = 0;
         let nearestDangerAngle = null;
 
-        // Evaluar cercanía a los bordes (Peligro de colisión con pared)
         const wallDistMin = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
         if (wallDistMin < 180) {
             riskScore += (180 - wallDistMin) * 0.08; 
@@ -658,7 +716,6 @@ if (!canvas || !ctx) {
             else nearestDangerAngle = Math.PI / 2;
         }
 
-        // Evaluar peligro con el Jugador Humano (Instinto de supervivencia absoluta)
         if (playerRef.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distHead = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
             if (distHead < bot.safetyMargin) {
@@ -669,14 +726,13 @@ if (!canvas || !ctx) {
                 const seg = playerRef.trail[i];
                 const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
                 if (distSeg < bot.safetyMargin * 0.75) {
-                    riskScore += 4.0; // Alto riesgo de chocar contra el cuerpo del jugador
+                    riskScore += 4.0;
                     nearestDangerAngle = Math.atan2(seg.y - bot.y, seg.x - bot.x);
                     break;
                 }
             }
         }
 
-        // Evaluar peligro con otros Bots cercanos
         const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
         for (const other of nearbyEntities) {
             if (other === bot || !other.alive) continue;
@@ -685,7 +741,6 @@ if (!canvas || !ctx) {
                 riskScore += 2.5;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(other.y - bot.y, other.x - bot.x);
             }
-            // Revisar segmentos de otros bots para defensa mutua
             for (let i = 0; i < other.trail.length - 10; i += 4) {
                 const seg = other.trail[i];
                 const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
@@ -703,7 +758,6 @@ if (!canvas || !ctx) {
     function chooseBotObjective(bot) {
         const { riskScore, nearestDangerAngle } = getAdvancedBotRisk(bot, player);
 
-        // REGLA 4: SUPERVIVENCIA ESTRICTA. Si hay riesgo de morir, esquivar obligatoriamente de inmediato
         if (riskScore > bot.riskTolerance) {
             return { type: 'evade', score: 999, evadeAngle: nearestDangerAngle };
         }
@@ -711,15 +765,13 @@ if (!canvas || !ctx) {
         let bestObjective = null;
         let highestScore = -999;
 
-        // REGLA 4: ATAQUE OBLIGATORIO Y AGRESIVO AL JUGADOR HUMANO (Cortándole el paso)
         if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
-            if (distPlayer < 900) { // Rango amplio de detección del jugador
+            if (distPlayer < 900) {
                 const playerAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-                // Calcular punto adelantado para cortarle el camino al jugador
                 const interceptPlayerX = player.x + Math.cos(playerAngle) * 140;
                 const interceptPlayerY = player.y + Math.sin(playerAngle) * 140;
-                let scorePlayer = 600 - distPlayer; // Máxima prioridad de ataque al jugador
+                let scorePlayer = 600 - distPlayer;
                 if (scorePlayer > highestScore) {
                     highestScore = scorePlayer;
                     bestObjective = { x: interceptPlayerX, y: interceptPlayerY, type: 'attack_player' };
@@ -727,7 +779,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // REGLA 2: ATAQUE Y DEFENSA ENTRE BOTS (Caza de rivales)
         const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
         for (const other of nearbyEntities) {
             if (other === bot || !other.alive || other === player) continue;
@@ -743,7 +794,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // REGLA 3: MONEDAS SUELTAS EN EL MAPA (Búsqueda por cercanía)
         for (const coin of goldCoins) {
             const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
             if (dist < 800) {
@@ -755,7 +805,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // Puntos de crecimiento cercanos (Pellets)
         if (!bestObjective || highestScore < 100) {
             const nearbyPellets = pelletGrid.getNearby(bot.x, bot.y);
             for (const pellet of nearbyPellets) {
@@ -772,7 +821,6 @@ if (!canvas || !ctx) {
 
         if (bestObjective) return bestObjective;
 
-        // REGLA 1: Sin giros en círculos. Exploración directa en línea recta
         return {
             x: bot.x + Math.cos(bot.angle) * 500,
             y: bot.y + Math.sin(bot.angle) * 500,
@@ -1073,9 +1121,6 @@ if (!canvas || !ctx) {
             if (coinEaten) continue;
         }
 
-        // =====================================================================
-        // BUCLE DE BOTS CON IA EXPERTA (CERO BUFFERS, ATAQUE Y SUPERVIVENCIA)
-        // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
@@ -1084,7 +1129,6 @@ if (!canvas || !ctx) {
 
             let targetAngle = bot.angle;
             if (objective.type === 'evade' && objective.evadeAngle !== null) {
-                // Si está acorralado o en peligro, escapa exactamente en dirección contraria al peligro
                 targetAngle = normalizeAngle(objective.evadeAngle + Math.PI);
             } else {
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
@@ -1107,7 +1151,6 @@ if (!canvas || !ctx) {
 
             const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
 
-            // 1. Cabeza de Bot vs Cuerpo del Jugador
             if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
                 for (let i = 0; i < player.trail.length - 10; i++) {
                     const seg = player.trail[i];
@@ -1119,13 +1162,13 @@ if (!canvas || !ctx) {
                         bots.splice(bIndex, 1);
                         setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
                         bot.alive = false;
+                        updateAdminBotSelect();
                         break;
                     }
                 }
             }
             if (!bot.alive) continue;
 
-            // 2. Cabeza de Bot vs Cuerpo de OTROS BOTS
             let botDiedByOther = false;
             const nearbyForCollision = entityGrid.getNearby(bot.x, bot.y);
             for (const otherBot of nearbyForCollision) {
@@ -1143,6 +1186,7 @@ if (!canvas || !ctx) {
                         bots.splice(bIndex, 1);
                         setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
                         botDiedByOther = true;
+                        updateAdminBotSelect();
                         break;
                     }
                 }
@@ -1150,7 +1194,6 @@ if (!canvas || !ctx) {
             }
             if (botDiedByOther) continue;
 
-            // 3. Cabeza del Jugador vs Cuerpo de este Bot
             if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
                 for (let i = 0; i < bot.trail.length - 10; i++) {
                     const seg = bot.trail[i];
@@ -1163,6 +1206,7 @@ if (!canvas || !ctx) {
                         showFloatingMessage(`💥 ¡Chocaste contra el cuerpo de ${bot.name}!`, '#ef4444');
                         const gallery = document.getElementById('skinGallery');
                         if (gallery) gallery.style.display = 'block';
+                        updateAdminBotSelect();
                         break;
                     }
                 }
