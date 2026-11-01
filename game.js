@@ -604,6 +604,10 @@ if (!canvas || !ctx) {
         }
     });
 
+    // =========================================================================
+    // MOTOR DE IA AGRESIVA Y ANTIBUCLE MEJORADO
+    // =========================================================================
+
     function getAdvancedBotRisk(bot, playerRef, botList) {
         let riskScore = 0;
         let nearestDangerAngle = null;
@@ -646,8 +650,8 @@ if (!canvas || !ctx) {
         return { riskScore, nearestDangerAngle };
     }
 
-    function chooseBotObjective(bot) {
-        const { riskScore } = getAdvancedBotRisk(bot, player, bots);
+    function chooseBotObjective(bot, allBots) {
+        const { riskScore } = getAdvancedBotRisk(bot, player, allBots);
 
         if (riskScore > bot.riskTolerance) {
             return { type: 'evade', score: 999 };
@@ -656,22 +660,43 @@ if (!canvas || !ctx) {
         let bestObjective = null;
         let highestScore = -999;
 
-        for (const coin of goldCoins) {
-            const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
-            if (dist < 800) {
-                let score = 300 - dist + (coin.value * 50);
+        // 1. BÚSQUEDA AGRESIVA DE OTROS BOTS (Caza e intercepción)
+        for (const other of allBots) {
+            if (other === bot || !other.alive) continue;
+            const distToOther = Math.hypot(other.x - bot.x, other.y - bot.y);
+            // Si el enemigo está a distancia de combate y el bot tiene suficiente agresividad
+            if (distToOther < 600 && bot.aggression > 0.3) {
+                // Calcular posición de intercepción adelantada a la cabeza del rival
+                const interceptX = other.x + Math.cos(other.angle || 0) * 80;
+                const interceptY = other.y + Math.sin(other.angle || 0) * 80;
+                const score = 350 - distToOther + (other.score * 20);
                 if (score > highestScore) {
                     highestScore = score;
-                    bestObjective = { x: coin.x, y: coin.y, type: 'coin' };
+                    bestObjective = { x: interceptX, y: interceptY, type: 'attack_bot' };
                 }
             }
         }
 
-        if (!bestObjective || highestScore < 120) {
+        // 2. BÚSQUEDA DE MONEDAS Y COFRES DE VALOR
+        if (!bestObjective || highestScore < 150) {
+            for (const coin of goldCoins) {
+                const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
+                if (dist < 800) {
+                    let score = 280 - dist + (coin.value * 50);
+                    if (score > highestScore) {
+                        highestScore = score;
+                        bestObjective = { x: coin.x, y: coin.y, type: 'coin' };
+                    }
+                }
+            }
+        }
+
+        // 3. BÚSQUEDA DE PELLETS DE COMIDA
+        if (!bestObjective || highestScore < 100) {
             for (const pellet of foodPellets) {
                 const dist = Math.hypot(pellet.x - bot.x, pellet.y - bot.y);
                 if (dist < 500) {
-                    const score = 200 - dist;
+                    const score = 180 - dist;
                     if (score > highestScore) {
                         highestScore = score;
                         bestObjective = { x: pellet.x, y: pellet.y, type: 'food' };
@@ -680,15 +705,23 @@ if (!canvas || !ctx) {
             }
         }
 
-        if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0)) && bot.aggression > 0.5) {
+        // 4. ATAQUE AL JUGADOR HUMANO SI ESTÁ CERCA
+        if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0)) && bot.aggression > 0.4) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
-            if (distPlayer < 350 && riskScore < 1.8) {
-                return { x: player.x, y: player.y, type: 'attack_pass' };
+            if (distPlayer < 450 && riskScore < 2.0) {
+                const interceptPlayerX = player.x + Math.cos(player.trail.length > 0 ? player.trail[player.trail.length-1].angle : 0) * 90;
+                const interceptPlayerY = player.y + Math.sin(player.trail.length > 0 ? player.trail[player.trail.length-1].angle : 0) * 90;
+                let scorePlayer = 320 - distPlayer;
+                if (scorePlayer > highestScore) {
+                    highestScore = scorePlayer;
+                    bestObjective = { x: interceptPlayerX, y: interceptPlayerY, type: 'attack_pass' };
+                }
             }
         }
 
         if (bestObjective) return bestObjective;
 
+        // Exploración frontal continua si no hay objetivos
         return {
             x: bot.x + Math.cos(bot.angle) * 400,
             y: bot.y + Math.sin(bot.angle) * 400,
@@ -711,15 +744,15 @@ if (!canvas || !ctx) {
             y: sy,
             radius: 18,
             maxSegments: INITIAL_SEGMENTS,
-            speed: 5.0 + Math.random() * 1.0,
+            speed: 5.2 + Math.random() * 1.0,
             angle: sAngle,
-            changeTimer: 0,
             trail: [],
             score: 0,
             alive: true,
-            aggression: 0.4 + Math.random() * 0.4,
-            safetyMargin: 160 + Math.random() * 80,
-            riskTolerance: 3.0 + Math.random() * 1.5
+            aggression: 0.6 + Math.random() * 0.4, // Mayor agresividad base
+            safetyMargin: 140 + Math.random() * 60,
+            riskTolerance: 3.5 + Math.random() * 1.5,
+            orbitTimer: 0 // Temporizador anti-bucle
         });
     }
 
@@ -896,9 +929,7 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
-        // =====================================================================
         // CONSUMO DE PELLETS DE COMIDA (JUGADOR Y BOTS)
-        // =====================================================================
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
@@ -906,7 +937,6 @@ if (!canvas || !ctx) {
             
             let pelletEaten = false;
 
-            // Consumo por el jugador
             if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
                 if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += 1;
                 
@@ -927,7 +957,6 @@ if (!canvas || !ctx) {
                 continue;
             }
 
-            // Consumo por los BOTS
             for (const bot of bots) {
                 if (bot.alive && Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
                     if (bot.maxSegments < MAX_SEGMENTS_LIMIT) bot.maxSegments += 1;
@@ -994,13 +1023,15 @@ if (!canvas || !ctx) {
             if (coinEaten) continue;
         }
 
-        // BUCLE DE BOTS Y COLISIONES CABEZA A CUERPO
+        // =====================================================================
+        // BUCLE DE BOTS CON IA AGRESIVA Y ANTI-BUCLE DE GIRO
+        // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
 
             const { riskScore, nearestDangerAngle } = getAdvancedBotRisk(bot, player, bots);
-            const objective = chooseBotObjective(bot);
+            const objective = chooseBotObjective(bot, bots);
 
             let targetAngle = bot.angle;
             if (objective.type === 'evade' && nearestDangerAngle !== null) {
@@ -1009,8 +1040,19 @@ if (!canvas || !ctx) {
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             }
 
+            // Mecanismo anti-bucle: si da muchas vueltas seguidas, romper órbita forzando línea recta
             const angleDiff = normalizeAngle(targetAngle - bot.angle);
-            bot.angle += angleDiff * 0.10;
+            if (Math.abs(angleDiff) > 2.5) {
+                bot.orbitTimer = (bot.orbitTimer || 0) + 1;
+                if (bot.orbitTimer > 60) {
+                    targetAngle += (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+                    bot.orbitTimer = 0;
+                }
+            } else {
+                bot.orbitTimer = Math.max(0, (bot.orbitTimer || 0) - 1);
+            }
+
+            bot.angle += normalizeAngle(targetAngle - bot.angle) * 0.12;
             bot.angle = normalizeAngle(bot.angle);
 
             bot.x += Math.cos(bot.angle) * bot.speed;
