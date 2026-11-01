@@ -20,7 +20,7 @@ if (!canvas || !ctx) {
     const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20;
 
     // =========================================================================
-    // MOTOR DE CUADRÍCULA ESPACIAL (OPTIMIZACIÓN CONTRA EL LAG)
+    // MOTOR DE CUADRÍCULA ESPACIAL (CERO LAG CON CIENTOS DE ENTIDADES)
     // =========================================================================
     class SpatialGrid {
         constructor(cellSize) {
@@ -641,44 +641,59 @@ if (!canvas || !ctx) {
         }
     });
 
+    // =========================================================================
+    // IA EXPERTA: SUPERVIVENCIA ESTRICTA + CAZA AGRESIVA AL JUGADOR Y BOTS
+    // =========================================================================
     function getAdvancedBotRisk(bot, playerRef) {
         let riskScore = 0;
         let nearestDangerAngle = null;
 
+        // Evaluar cercanía a los bordes (Peligro de colisión con pared)
         const wallDistMin = Math.min(bot.x, WORLD_WIDTH - bot.x, bot.y, WORLD_HEIGHT - bot.y);
-        if (wallDistMin < 200) {
-            riskScore += (200 - wallDistMin) * 0.06; 
+        if (wallDistMin < 180) {
+            riskScore += (180 - wallDistMin) * 0.08; 
             if (wallDistMin === bot.x) nearestDangerAngle = Math.PI;
             else if (wallDistMin === WORLD_WIDTH - bot.x) nearestDangerAngle = 0;
             else if (wallDistMin === bot.y) nearestDangerAngle = -Math.PI / 2;
             else nearestDangerAngle = Math.PI / 2;
         }
 
+        // Evaluar peligro con el Jugador Humano (Instinto de supervivencia absoluta)
         if (playerRef.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distHead = Math.hypot(playerRef.x - bot.x, playerRef.y - bot.y);
             if (distHead < bot.safetyMargin) {
-                riskScore += (bot.safetyMargin - distHead) * 0.05;
+                riskScore += (bot.safetyMargin - distHead) * 0.07;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(playerRef.y - bot.y, playerRef.x - bot.x);
             }
-            for (let i = 0; i < playerRef.trail.length - 10; i += 4) {
+            for (let i = 0; i < playerRef.trail.length - 10; i += 3) {
                 const seg = playerRef.trail[i];
                 const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
-                if (distSeg < bot.safetyMargin * 0.7) {
-                    riskScore += 3.0;
+                if (distSeg < bot.safetyMargin * 0.75) {
+                    riskScore += 4.0; // Alto riesgo de chocar contra el cuerpo del jugador
                     nearestDangerAngle = Math.atan2(seg.y - bot.y, seg.x - bot.x);
                     break;
                 }
             }
         }
 
-        // Consultar entidades cercanas usando la Cuadrícula Espacial
+        // Evaluar peligro con otros Bots cercanos
         const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
         for (const other of nearbyEntities) {
             if (other === bot || !other.alive) continue;
             const distBotHead = Math.hypot(other.x - bot.x, other.y - bot.y);
             if (distBotHead < bot.safetyMargin * 0.6) {
-                riskScore += 2.0;
+                riskScore += 2.5;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(other.y - bot.y, other.x - bot.x);
+            }
+            // Revisar segmentos de otros bots para defensa mutua
+            for (let i = 0; i < other.trail.length - 10; i += 4) {
+                const seg = other.trail[i];
+                const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
+                if (distSeg < bot.safetyMargin * 0.6) {
+                    riskScore += 2.0;
+                    if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(seg.y - bot.y, seg.x - bot.x);
+                    break;
+                }
             }
         }
 
@@ -686,24 +701,41 @@ if (!canvas || !ctx) {
     }
 
     function chooseBotObjective(bot) {
-        const { riskScore } = getAdvancedBotRisk(bot, player);
+        const { riskScore, nearestDangerAngle } = getAdvancedBotRisk(bot, player);
 
+        // REGLA 4: SUPERVIVENCIA ESTRICTA. Si hay riesgo de morir, esquivar obligatoriamente de inmediato
         if (riskScore > bot.riskTolerance) {
-            return { type: 'evade', score: 999 };
+            return { type: 'evade', score: 999, evadeAngle: nearestDangerAngle };
         }
 
         let bestObjective = null;
         let highestScore = -999;
 
-        // 1. CAZA Y COMBATE AGRESIVO (Buscar bots cercanos usando la celda espacial)
+        // REGLA 4: ATAQUE OBLIGATORIO Y AGRESIVO AL JUGADOR HUMANO (Cortándole el paso)
+        if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
+            const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
+            if (distPlayer < 900) { // Rango amplio de detección del jugador
+                const playerAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
+                // Calcular punto adelantado para cortarle el camino al jugador
+                const interceptPlayerX = player.x + Math.cos(playerAngle) * 140;
+                const interceptPlayerY = player.y + Math.sin(playerAngle) * 140;
+                let scorePlayer = 600 - distPlayer; // Máxima prioridad de ataque al jugador
+                if (scorePlayer > highestScore) {
+                    highestScore = scorePlayer;
+                    bestObjective = { x: interceptPlayerX, y: interceptPlayerY, type: 'attack_player' };
+                }
+            }
+        }
+
+        // REGLA 2: ATAQUE Y DEFENSA ENTRE BOTS (Caza de rivales)
         const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
         for (const other of nearbyEntities) {
-            if (other === bot || !other.alive) continue;
+            if (other === bot || !other.alive || other === player) continue;
             const distToOther = Math.hypot(other.x - bot.x, other.y - bot.y);
             if (distToOther < 700) {
                 const interceptX = other.x + Math.cos(other.angle || 0) * 100;
                 const interceptY = other.y + Math.sin(other.angle || 0) * 100;
-                const score = 400 - distToOther + (other.score * 25);
+                const score = 400 - distToOther + (other.score * 20);
                 if (score > highestScore) {
                     highestScore = score;
                     bestObjective = { x: interceptX, y: interceptY, type: 'attack_bot' };
@@ -711,27 +743,25 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 2. MONEDAS Y COFRES
-        if (!bestObjective || highestScore < 150) {
-            for (const coin of goldCoins) {
-                const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
-                if (dist < 800) {
-                    let score = 300 - dist + (coin.value * 60);
-                    if (score > highestScore) {
-                        highestScore = score;
-                        bestObjective = { x: coin.x, y: coin.y, type: 'coin' };
-                    }
+        // REGLA 3: MONEDAS SUELTAS EN EL MAPA (Búsqueda por cercanía)
+        for (const coin of goldCoins) {
+            const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
+            if (dist < 800) {
+                let score = 350 - dist + (coin.value * 70);
+                if (score > highestScore) {
+                    highestScore = score;
+                    bestObjective = { x: coin.x, y: coin.y, type: 'coin' };
                 }
             }
         }
 
-        // 3. PUNTOS DE CRECIMIENTO CERCANOS (Usando celda de comida)
+        // Puntos de crecimiento cercanos (Pellets)
         if (!bestObjective || highestScore < 100) {
             const nearbyPellets = pelletGrid.getNearby(bot.x, bot.y);
             for (const pellet of nearbyPellets) {
                 const dist = Math.hypot(pellet.x - bot.x, pellet.y - bot.y);
                 if (dist < 450) {
-                    const score = 220 - dist;
+                    const score = 250 - dist;
                     if (score > highestScore) {
                         highestScore = score;
                         bestObjective = { x: pellet.x, y: pellet.y, type: 'food' };
@@ -742,7 +772,7 @@ if (!canvas || !ctx) {
 
         if (bestObjective) return bestObjective;
 
-        // Exploración en línea recta si no hay objetivos cercanos
+        // REGLA 1: Sin giros en círculos. Exploración directa en línea recta
         return {
             x: bot.x + Math.cos(bot.angle) * 500,
             y: bot.y + Math.sin(bot.angle) * 500,
@@ -770,10 +800,8 @@ if (!canvas || !ctx) {
             trail: [],
             score: 0,
             alive: true,
-            aggression: 0.7 + Math.random() * 0.3,
-            safetyMargin: 150 + Math.random() * 50,
-            riskTolerance: 4.0 + Math.random() * 1.0,
-            orbitTimer: 0
+            safetyMargin: 160 + Math.random() * 40,
+            riskTolerance: 3.2 + Math.random() * 0.8
         });
     }
 
@@ -908,7 +936,6 @@ if (!canvas || !ctx) {
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Actualizar Cuadrícula Espacial para este fotograma
         entityGrid.clear();
         pelletGrid.clear();
 
@@ -964,35 +991,20 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
-        // CONSUMO DE PELLETS USANDO LA CUADRÍCULA ESPACIAL DE COMIDA
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
             ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
             
             let pelletEaten = false;
-
             if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
                 if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += 1;
-                
                 playerPowerState.growthPointsEaten += 1;
-                if (playerPowerState.growthPointsEaten >= 100) {
-                    playerPowerState.growthPointsEaten = 0;
-                    const lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-                    const dropX = player.x + Math.cos(lastAngle) * 70;
-                    const dropY = player.y + Math.sin(lastAngle) * 70;
-                    const types = ['speed', 'invisibility', 'power'];
-                    const randomType = types[Math.floor(Math.random() * types.length)];
-                    spawnSpecialBox(dropX, dropY, randomType);
-                    showFloatingMessage("🎁 ¡Has alcanzado 100 puntos! Caja de regalo desplegada enfrente.", "#38bdf8");
-                }
-
                 foodPellets.splice(i, 1);
                 spawnPellet();
                 continue;
             }
 
-            // Revisar bots cercanos al pellet
             const nearbyBots = entityGrid.getNearby(p.x, p.y);
             for (const bot of nearbyBots) {
                 if (bot !== player && bot.alive && Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
@@ -1023,14 +1035,14 @@ if (!canvas || !ctx) {
             if (player.alive && isGameActive && Math.hypot(player.x - box.x, player.y - box.y) < player.radius + box.radius) {
                 if (box.type === 'speed') {
                     playerPowerState.speedBoostTimer = 7.0;
-                    showFloatingMessage("⚡ ¡Caja de Rapidez recogida! Velocidad x1.8 por 7s.", "#0ea5e9");
+                    showFloatingMessage("⚡ ¡Caja de Rapidez recogida!", "#0ea5e9");
                 } else if (box.type === 'invisibility') {
                     playerPowerState.invisibilityTimer = 7.0;
-                    showFloatingMessage("👻 ¡Caja de Invisibilidad recogida! Oculto por 7s.", "#8b5cf6");
+                    showFloatingMessage("👻 ¡Caja de Invisibilidad recogida!", "#8b5cf6");
                 } else if (box.type === 'power') {
                     playerPowerState.hasDestructionPower = true;
                     playerPowerState.powerTimer = 7.0;
-                    showFloatingMessage("💥 ¡Poder Destructor obtenido! Haz click en 7s para disparar.", "#ef4444");
+                    showFloatingMessage("💥 ¡Poder Destructor obtenido!", "#ef4444");
                 }
                 specialBoxes.splice(i, 1);
             }
@@ -1062,34 +1074,23 @@ if (!canvas || !ctx) {
         }
 
         // =====================================================================
-        // BUCLE DE BOTS CON IA ÓPTIMA Y COLISIONES RÁPIDAS
+        // BUCLE DE BOTS CON IA EXPERTA (CERO BUFFERS, ATAQUE Y SUPERVIVENCIA)
         // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
 
-            const { riskScore, nearestDangerAngle } = getAdvancedBotRisk(bot, player);
             const objective = chooseBotObjective(bot);
 
             let targetAngle = bot.angle;
-            if (objective.type === 'evade' && nearestDangerAngle !== null) {
-                targetAngle = normalizeAngle(nearestDangerAngle + Math.PI);
+            if (objective.type === 'evade' && objective.evadeAngle !== null) {
+                // Si está acorralado o en peligro, escapa exactamente en dirección contraria al peligro
+                targetAngle = normalizeAngle(objective.evadeAngle + Math.PI);
             } else {
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             }
 
-            const angleDiff = normalizeAngle(targetAngle - bot.angle);
-            if (Math.abs(angleDiff) > 2.2) {
-                bot.orbitTimer = (bot.orbitTimer || 0) + 1;
-                if (bot.orbitTimer > 40) {
-                    targetAngle += (Math.random() > 0.5 ? Math.PI : -Math.PI);
-                    bot.orbitTimer = 0;
-                }
-            } else {
-                bot.orbitTimer = Math.max(0, (bot.orbitTimer || 0) - 1);
-            }
-
-            bot.angle += normalizeAngle(targetAngle - bot.angle) * 0.14;
+            bot.angle += normalizeAngle(targetAngle - bot.angle) * 0.16;
             bot.angle = normalizeAngle(bot.angle);
 
             bot.x += Math.cos(bot.angle) * bot.speed;
@@ -1124,7 +1125,7 @@ if (!canvas || !ctx) {
             }
             if (!bot.alive) continue;
 
-            // 2. Cabeza de Bot vs Cuerpo de OTROS BOTS (Usando entidades cercanas)
+            // 2. Cabeza de Bot vs Cuerpo de OTROS BOTS
             let botDiedByOther = false;
             const nearbyForCollision = entityGrid.getNearby(bot.x, bot.y);
             for (const otherBot of nearbyForCollision) {
