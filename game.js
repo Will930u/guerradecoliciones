@@ -604,10 +604,6 @@ if (!canvas || !ctx) {
         }
     });
 
-    // =========================================================================
-    // MOTOR DE IA ANTIBUCLE (MOVIMIENTO FLUIDO Y CONTINUO)
-    // =========================================================================
-
     function getAdvancedBotRisk(bot, playerRef, botList) {
         let riskScore = 0;
         let nearestDangerAngle = null;
@@ -627,7 +623,7 @@ if (!canvas || !ctx) {
                 riskScore += (bot.safetyMargin - distHead) * 0.04;
                 if (!nearestDangerAngle) nearestDangerAngle = Math.atan2(playerRef.y - bot.y, playerRef.x - bot.x);
             }
-            for (let i = 0; i < playerRef.trail.length; i += 4) {
+            for (let i = 0; i < playerRef.trail.length - 10; i += 4) {
                 const seg = playerRef.trail[i];
                 const distSeg = Math.hypot(seg.x - bot.x, seg.y - bot.y);
                 if (distSeg < bot.safetyMargin * 0.7) {
@@ -693,7 +689,6 @@ if (!canvas || !ctx) {
 
         if (bestObjective) return bestObjective;
 
-        // Exploración en avance continuo si no hay objetivos cercanos
         return {
             x: bot.x + Math.cos(bot.angle) * 400,
             y: bot.y + Math.sin(bot.angle) * 400,
@@ -979,7 +974,9 @@ if (!canvas || !ctx) {
             if (coinEaten) continue;
         }
 
-        // BUCLE DE BOTS CON MOVIMIENTO FRONTAL CONSTANTE (ANTI-ENROSQUE)
+        // =====================================================================
+        // BUCLE DE BOTS Y COLISIONES CABEZA A CUERPO (ELIMINACIÓN ESTRICTA)
+        // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
@@ -988,23 +985,19 @@ if (!canvas || !ctx) {
             const objective = chooseBotObjective(bot);
 
             let targetAngle = bot.angle;
-
             if (objective.type === 'evade' && nearestDangerAngle !== null) {
                 targetAngle = normalizeAngle(nearestDangerAngle + Math.PI);
             } else {
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             }
 
-            // Giro suave sin tirones excesivos
             const angleDiff = normalizeAngle(targetAngle - bot.angle);
-            bot.angle += angleDiff * 0.10; // Factor de giro más suave para evitar bucles cerrados
+            bot.angle += angleDiff * 0.10;
             bot.angle = normalizeAngle(bot.angle);
 
-            // GARANTIZAR VELOCIDAD CONSTANTE HACIA ADELANTE
             bot.x += Math.cos(bot.angle) * bot.speed;
             bot.y += Math.sin(bot.angle) * bot.speed;
 
-            // Rebote limpio y seguro en los bordes del mapa sin atascarse
             const margin = 60;
             if (bot.x < margin) { bot.x = margin; bot.angle = 0; }
             if (bot.x > WORLD_WIDTH - margin) { bot.x = WORLD_WIDTH - margin; bot.angle = Math.PI; }
@@ -1015,32 +1008,64 @@ if (!canvas || !ctx) {
             if (bot.trail.length > bot.maxSegments) bot.trail.shift();
 
             const isPlayerHidden = adminInvisible || playerPowerState.invisibilityTimer > 0;
+
+            // 1. COLISIÓN: Cabeza de Bot vs Cuerpo del Jugador
             if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
-                for (const segment of bot.trail) {
-                    const hit = Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.75;
-                    if (hit) {
+                for (let i = 0; i < player.trail.length - 10; i++) {
+                    const seg = player.trail[i];
+                    if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + player.radius * 0.6) {
+                        createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
+                        showFloatingMessage(`💥 ¡${bot.name} chocó contra ti y murió!`, '#10b981');
+                        const deadName = bot.name;
+                        const deadSkin = bot.skin;
+                        bots.splice(bIndex, 1);
+                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
+                        bot.alive = false;
+                        break;
+                    }
+                }
+            }
+            if (!bot.alive) continue;
+
+            // 2. COLISIÓN: Cabeza de Bot vs Cuerpo de OTROS BOTS
+            let botDiedByOther = false;
+            for (let otherIdx = 0; otherIdx < bots.length; otherIdx++) {
+                if (otherIdx === bIndex) continue;
+                const otherBot = bots[otherIdx];
+                if (!otherBot.alive) continue;
+
+                for (let i = 0; i < otherBot.trail.length - 10; i++) {
+                    const seg = otherBot.trail[i];
+                    if (Math.hypot(bot.x - seg.x, bot.y - seg.y) < bot.radius + otherBot.radius * 0.6) {
+                        createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
+                        otherBot.score += 1;
+                        otherBot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, otherBot.maxSegments + 20);
+                        showFloatingMessage(`💥 ${bot.name} chocó contra el cuerpo de ${otherBot.name}.`, '#ef4444');
+                        const deadName = bot.name;
+                        const deadSkin = bot.skin;
+                        bots.splice(bIndex, 1);
+                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
+                        botDiedByOther = true;
+                        break;
+                    }
+                }
+                if (botDiedByOther) break;
+            }
+            if (botDiedByOther) continue;
+
+            // 3. COLISIÓN: Cabeza del Jugador vs Cuerpo de este Bot
+            if (player.alive && isGameActive && !player.invincible && !isPlayerHidden) {
+                for (let i = 0; i < bot.trail.length - 10; i++) {
+                    const seg = bot.trail[i];
+                    if (Math.hypot(player.x - seg.x, player.y - seg.y) < player.radius + bot.radius * 0.6) {
                         player.alive = false;
                         isGameActive = false;
                         bot.score += 1;
                         bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
                         createGoldCoinsFromPlayerDeath(player.trail);
-                        showFloatingMessage(`💥 ¡Colisión con ${bot.name}!`, '#ef4444');
+                        showFloatingMessage(`💥 ¡Chocaste contra el cuerpo de ${bot.name}!`, '#ef4444');
                         const gallery = document.getElementById('skinGallery');
                         if (gallery) gallery.style.display = 'block';
-                        break;
-                    }
-                }
-            }
-
-            if (player.alive && isGameActive && !isPlayerHidden) {
-                for (const segment of player.trail) {
-                    if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
-                        createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
-                        showFloatingMessage(`¡${bot.name} eliminado por ti!`, '#10b981');
-                        const deadName = bot.name;
-                        const deadSkin = bot.skin;
-                        bots.splice(bIndex, 1);
-                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
                         break;
                     }
                 }
