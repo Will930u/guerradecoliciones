@@ -1,799 +1,835 @@
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas ? canvas.getContext('2d') : null;
 
-function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-
-const WORLD_WIDTH = 6000;
-const WORLD_HEIGHT = 6000;
-const BACKEND_URL = 'https://guerradecoliciones.onrender.com';
-const ENTRY_FEE = 2.0;
-const INITIAL_SEGMENTS = 30;
-const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20;
-
-let currentUserId = localStorage.getItem('supabase_user_id') || '00000000-0000-0000-0000-000000000000';
-let backendAdminId = '';
-let supabaseClient = null;
-let isGameActive = false;
-let verificationInterval = null;
-let cashOutCheckInterval = null;
-let isAdminUser = false;
-let adminInvisible = false;
-let adminFreeCam = false;
-let adminCamX = WORLD_WIDTH / 2;
-let adminCamY = WORLD_HEIGHT / 2;
-
-let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
-let camera = { x: 0, y: 0, zoom: 1, update(targetX, targetY) { this.x = targetX - (canvas.width / 2) / this.zoom; this.y = targetY - (canvas.height / 2) / this.zoom; } };
-
-const skinCatalog = {
-    cyber_dragon: { name: 'Digital Dragon', primaryColor: '#10b981', secondaryColor: '#065f46' },
-    fire_scale: { name: 'FireScale Killa', primaryColor: '#ef4444', secondaryColor: '#991b1b' },
-    flag_venezuela: { name: 'TriColor Runner', primaryColor: '#facc15', secondaryColor: '#1e40af' },
-    clockwork_gator: { name: 'Clockwork Gator', primaryColor: '#d97706', secondaryColor: '#78350f' }
-};
-const skinKeys = Object.keys(skinCatalog);
-
-const player = {
-    x: WORLD_WIDTH / 2,
-    y: WORLD_HEIGHT / 2,
-    radius: 18,
-    maxSegments: INITIAL_SEGMENTS,
-    speed: 7,
-    trail: [],
-    alive: false,
-    isSpectator: false,
-    score: 0,
-    name: 'Tú (Jugador)',
-    skin: skinCatalog.cyber_dragon,
-    cashOutGoal: 50.0,
-    invincible: false,
-    cashOutInterval: null
-};
-
-let foodPellets = [];
-let goldCoins = [];
-let bots = [];
-
-function showFloatingMessage(text, color = '#10b981') {
-    const notif = document.getElementById('floatingNotification');
-    if (!notif) return;
-    notif.innerText = text;
-    notif.style.background = color;
-    notif.style.opacity = '1';
-    clearTimeout(window.notifTimer);
-    window.notifTimer = setTimeout(() => {
-        notif.style.opacity = '0';
-    }, 3000);
-}
-
-function selectSkin(skinKey) {
-    if (skinCatalog[skinKey]) {
-        player.skin = skinCatalog[skinKey];
-        showFloatingMessage(`Skin actualizada: ${skinCatalog[skinKey].name}`);
-    }
-}
-window.selectSkin = selectSkin;
-
-async function initSupabase() {
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/config`);
-        const config = await response.json();
-        if (config.admin_user_id) backendAdminId = config.admin_user_id;
-
-        if (config.supabase_url && config.supabase_anon_key && window.supabase) {
-            supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
-            const { data: sessionData } = await supabaseClient.auth.getSession();
-            if (sessionData?.session?.user) {
-                currentUserId = sessionData.session.user.id;
-                localStorage.setItem('supabase_user_id', currentUserId);
-            }
-            if (backendAdminId && currentUserId === backendAdminId) {
-                isAdminUser = true;
-                showFloatingMessage('👑 ¡Bienvenido Administrador! Panel VIP activado.', '#38bdf8');
-                injectAdminPanel();
-            }
-        }
-    } catch (error) {
-        console.error('Error inicializando Supabase:', error);
-    }
-}
-
-function injectAdminPanel() {
-    if (document.getElementById('adminPanelContainer')) return;
-    const panel = document.createElement('div');
-    panel.id = 'adminPanelContainer';
-    panel.style.cssText = 'position: fixed; top: 20px; left: 20px; z-index: 9999; background: rgba(15, 23, 42, 0.95); border: 2px solid #38bdf8; padding: 12px; border-radius: 12px; color: #fff; font-family: sans-serif; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 260px; transition: all 0.3s ease;';
-    panel.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleAdminPanelCollapse()">
-            <h3 style="margin: 0; font-size: 0.95rem; color: #38bdf8;">👑 Admin Panel</h3>
-            <span id="adminToggleIcon" style="font-size: 1rem; color: #38bdf8; font-weight: bold;">[-]</span>
-        </div>
-        <div id="adminPanelBody" style="margin-top: 10px; display: block;">
-            <button onclick="adminDropGift('chest')" style="width: 100%; padding: 7px; margin-bottom: 5px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🎁 Cofre</button>
-            <button onclick="adminDropGift('star')" style="width: 100%; padding: 7px; margin-bottom: 8px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⭐ Estrella</button>
-            <button id="adminFreeCamBtn" onclick="toggleAdminFreeCam()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🗺️ Navegación Libre: OFF</button>
-            <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">👻 Modo Fantasma: OFF</button>
-            <button onclick="adminSpawnDirect()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⚡ Spawn instantáneo</button>
-            <button onclick="adminFreeEntry()" style="width: 100%; padding: 7px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🚀 Ingreso VIP</button>
-        </div>
-    `;
-    document.body.appendChild(panel);
-}
-
-window.toggleAdminPanelCollapse = function() {
-    const body = document.getElementById('adminPanelBody');
-    const icon = document.getElementById('adminToggleIcon');
-    const panel = document.getElementById('adminPanelContainer');
-    if (!body || !icon || !panel) return;
-    const collapsed = body.style.display === 'none';
-    body.style.display = collapsed ? 'block' : 'none';
-    icon.innerText = collapsed ? '[-]' : '[+]';
-    panel.style.width = collapsed ? '260px' : '140px';
-};
-
-window.toggleAdminFreeCam = function() {
-    if (!isAdminUser) return;
-    adminFreeCam = !adminFreeCam;
-    if (adminFreeCam) {
-        player.alive = false;
-        adminCamX = player.x;
-        adminCamY = player.y;
-    }
-    const btn = document.getElementById('adminFreeCamBtn');
-    if (btn) {
-        btn.style.background = adminFreeCam ? '#0ea5e9' : '#64748b';
-        btn.innerText = adminFreeCam ? '🗺️ Navegación Libre: ON' : '🗺️ Navegación Libre: OFF';
-    }
-    showFloatingMessage(adminFreeCam ? '🗺️ Navegación libre activada.' : '🗺️ Navegación libre desactivada.', adminFreeCam ? '#0ea5e9' : '#10b981');
-};
-
-window.adminSpawnDirect = function() {
-    if (!isAdminUser) return;
-    adminFreeCam = false;
-    closeModal();
-    startArenaGame();
-    showFloatingMessage('🎮 Spawn instantáneo de Administrador.', '#06b6d4');
-};
-
-window.adminFreeEntry = function() {
-    if (!isAdminUser) return;
-    closeModal();
-    startArenaGame();
-    showFloatingMessage('🚀 Ingreso VIP Gratuito aplicado.', '#8b5cf6');
-};
-
-window.toggleAdminInvisible = function() {
-    if (!isAdminUser) return;
-    adminInvisible = !adminInvisible;
-    player.invincible = adminInvisible;
-    const btn = document.getElementById('adminInvisBtn');
-    if (btn) {
-        btn.style.background = adminInvisible ? '#ef4444' : '#64748b';
-        btn.innerText = adminInvisible ? '👻 Modo Fantasma: ON' : '👻 Modo Fantasma: OFF';
-    }
-    showFloatingMessage(adminInvisible ? '👻 Modo Fantasma activo.' : '👻 Modo Fantasma inactivo.', adminInvisible ? '#ef4444' : '#10b981');
-};
-
-window.adminDropGift = function(type) {
-    if (!isAdminUser) return;
-    const valInput = document.getElementById('adminGiftValue');
-    const val = valInput ? parseFloat(valInput.value) || 1 : 1;
-    const targetX = mouse.x + camera.x;
-    const targetY = mouse.y + camera.y;
-    const color = type === 'chest' ? '#eab308' : '#facc15';
-    goldCoins.push({ x: targetX, y: targetY, radius: type === 'chest' ? 10 : 8, color, value: val });
-    showFloatingMessage(`🎁 ¡${type === 'chest' ? 'Cofre' : 'Estrella'} desplegado! ($${val.toFixed(2)})`, '#10b981');
-};
-
-async function syncBcvRate() {
-    try {
-        const response = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
-        const data = await response.json();
-        if (data && data.promedio) {
-            const rate = data.promedio.toFixed(2);
-            const rateElem = document.getElementById('bcvRate');
-            if (rateElem) rateElem.innerText = `${rate}`;
-            window.currentBcvRate = parseFloat(rate);
-        }
-    } catch (error) {
-        console.error('Error consultando tasa BCV:', error);
-    }
-}
-
-async function syncUserWallet() {
-    if (!currentUserId || currentUserId === '00000000-0000-0000-0000-000000000000') return;
-    try {
-        if (!supabaseClient) await initSupabase();
-        if (!supabaseClient) return;
-        const { data: wallet } = await supabaseClient.from('user_wallets').select('balance_usd').eq('user_id', currentUserId).single();
-        if (wallet) {
-            const balElem = document.getElementById('userBalance');
-            if (balElem) balElem.innerText = `$${parseFloat(wallet.balance_usd).toFixed(2)} USD`;
-        }
-    } catch (error) {
-        console.error('Error sincronizando billetera:', error);
-    }
-}
-
-function startWaitingForApproval() {
-    showFloatingMessage('⏳ Pago reportado. Esperando aprobación...', '#eab308');
-    const modalTitle = document.getElementById('modalTitle');
-    if (modalTitle) modalTitle.innerText = 'Verificando Pago ($2.00)';
-    const modalBody = document.getElementById('modalBodyContent');
-    if (modalBody) {
-        modalBody.innerHTML = `
-            <div style="text-align: center; padding: 20px;">
-                <div style="font-size: 2.5rem; margin-bottom: 10px;">⏳</div>
-                <p style="color: #eab308; font-weight: bold; font-size: 1.1rem;">Comprobante enviado al Administrador.</p>
-                <p style="font-size: 0.9rem; color: #94a3b8; margin-top: 8px;">En cuanto se apruebe en Telegram, entrarás automáticamente...</p>
-            </div>
-        `;
-    }
-    if (verificationInterval) clearInterval(verificationInterval);
-    verificationInterval = setInterval(async () => {
-        if (!supabaseClient || !currentUserId) return;
-        try {
-            const { data: wallet } = await supabaseClient.from('user_wallets').select('balance_usd').eq('user_id', currentUserId).single();
-            if (wallet && parseFloat(wallet.balance_usd) >= ENTRY_FEE) {
-                clearInterval(verificationInterval);
-                verificationInterval = null;
-                showFloatingMessage('¡Pago aprobado! Entrando...', '#10b981');
-                closeModal();
-                const newBalance = parseFloat(wallet.balance_usd) - ENTRY_FEE;
-                await supabaseClient.from('user_wallets').update({ balance_usd: newBalance }).eq('user_id', currentUserId);
-                const balElem = document.getElementById('userBalance');
-                if (balElem) balElem.innerText = `$${newBalance.toFixed(2)} USD`;
-                startArenaGame();
-            }
-        } catch (error) {
-            console.error('Error verificando aprobación automática:', error);
-        }
-    }, 3000);
-}
-
-function startArenaGame() {
-    isGameActive = true;
-    player.alive = true;
-    player.isSpectator = false;
-    adminFreeCam = false;
-
-    const spawnTarget = bots.length > 0 ? bots[Math.floor(Math.random() * bots.length)] : { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
-    player.x = Math.max(300, Math.min(WORLD_WIDTH - 300, spawnTarget.x + (Math.random() - 0.5) * 600));
-    player.y = Math.max(300, Math.min(WORLD_HEIGHT - 300, spawnTarget.y + (Math.random() - 0.5) * 600));
-    player.score = 0;
-    player.maxSegments = INITIAL_SEGMENTS;
-    player.trail = [];
-    player.invincible = true;
-    if (!adminInvisible) {
-        setTimeout(() => {
-            player.invincible = false;
-            showFloatingMessage('🛡️ Escudo de entrada finalizado.', '#eab308');
-        }, 4000);
-    }
-    const gallery = document.getElementById('skinGallery');
-    if (gallery) gallery.style.display = 'none';
-    showFloatingMessage('🛡️ Partida iniciada con éxito.', '#10b981');
-}
-
-async function submitPayment() {
-    const refInput = document.getElementById('refInput');
-    const ref = refInput ? refInput.value.trim() : '';
-    if (!ref) {
-        showFloatingMessage('Por favor ingresa el número de referencia.', '#ef4444');
-        return;
+if (!canvas || !ctx) {
+    console.warn('game.js cargado sin canvas válido; se omite la inicialización del juego.');
+} else {
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
     }
 
-    const rate = window.currentBcvRate || 36.5;
-    const amountUSD = 2.0;
-    const amountVES = (amountUSD * rate).toFixed(2);
-    const payload = {
-        user_id: currentUserId,
-        amount_usd: amountUSD,
-        bcv_rate: rate,
-        amount_ves: amountVES,
-        reference_number: ref,
-        phone_number: '0412-1234567'
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    const WORLD_WIDTH = 6000;
+    const WORLD_HEIGHT = 6000;
+    const BACKEND_URL = 'https://guerradecoliciones.onrender.com';
+    const ENTRY_FEE = 2.0;
+    const INITIAL_SEGMENTS = 30;
+    const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20;
+
+    const defaultUserId = '00000000-0000-0000-0000-000000000000';
+    let currentUserId = localStorage.getItem('supabase_user_id') || defaultUserId;
+    let backendAdminId = '';
+    let supabaseClient = null;
+    let isGameActive = false;
+    let verificationInterval = null;
+    let cashOutCheckInterval = null;
+    let isAdminUser = false;
+    let adminInvisible = false;
+    let adminFreeCam = false;
+    let adminCamX = WORLD_WIDTH / 2;
+    let adminCamY = WORLD_HEIGHT / 2;
+    let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+    let adminPanelCollapsed = false;
+
+    window.currentBcvRate = 36.5;
+
+    const skinCatalog = {
+        cyber_dragon: { name: 'Digital Dragon', primaryColor: '#10b981', secondaryColor: '#065f46' },
+        fire_scale: { name: 'FireScale Killa', primaryColor: '#ef4444', secondaryColor: '#991b1b' },
+        flag_venezuela: { name: 'TriColor Runner', primaryColor: '#facc15', secondaryColor: '#1e40af' },
+        clockwork_gator: { name: 'Clockwork Gator', primaryColor: '#d97706', secondaryColor: '#78350f' }
+    };
+    const skinKeys = Object.keys(skinCatalog);
+
+    const player = {
+        x: WORLD_WIDTH / 2,
+        y: WORLD_HEIGHT / 2,
+        radius: 18,
+        maxSegments: INITIAL_SEGMENTS,
+        speed: 7,
+        trail: [],
+        alive: false,
+        isSpectator: false,
+        score: 0,
+        name: 'Tú (Jugador)',
+        skin: skinCatalog.cyber_dragon,
+        cashOutGoal: 50.0,
+        invincible: false,
+        cashOutInterval: null
     };
 
-    try {
-        showFloatingMessage('Enviando comprobante...', '#eab308');
-        const response = await fetch(`${BACKEND_URL}/api/payment/report`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (response.ok && result.success) {
-            showFloatingMessage('¡Pago reportado con éxito!', '#10b981');
-            if (refInput) refInput.value = '';
-            startWaitingForApproval();
-        } else {
-            showFloatingMessage(result.error || 'Error al registrar el pago.', '#ef4444');
-        }
-    } catch (error) {
-        console.error('Error al conectar con backend:', error);
-        showFloatingMessage('Error de conexión con el backend.', '#ef4444');
-    }
-}
+    let foodPellets = [];
+    let goldCoins = [];
+    let bots = [];
 
-window.attemptCashOut = function() {
-    if (player.score < player.cashOutGoal) {
-        showFloatingMessage('Aún no has llenado la barra para retirarte.', '#ef4444');
-        return;
+    const camera = {
+        x: 0,
+        y: 0,
+        zoom: 1,
+        update(targetX, targetY) {
+            this.x = targetX - (canvas.width / 2) / this.zoom;
+            this.y = targetY - (canvas.height / 2) / this.zoom;
+        }
+    };
+
+    function showFloatingMessage(text, color = '#10b981') {
+        const notif = document.getElementById('floatingNotification');
+        if (!notif) return;
+        notif.innerText = text;
+        notif.style.background = color;
+        notif.style.opacity = '1';
+        clearTimeout(window.notifTimer);
+        window.notifTimer = setTimeout(() => {
+            notif.style.opacity = '0';
+        }, 3000);
     }
-    if (player.cashOutInterval) return;
-    player.alive = false;
-    player.isSpectator = true;
-    let secondsLeft = 10;
-    showFloatingMessage(`⏳ Retiro en proceso. Espectador (${secondsLeft}s)...`, '#eab308');
-    player.cashOutInterval = setInterval(async () => {
-        secondsLeft--;
-        if (secondsLeft > 0) {
-            showFloatingMessage(`⏳ Procesando cobro... ${secondsLeft}s`, '#eab308');
-        } else {
-            clearInterval(player.cashOutInterval);
-            player.cashOutInterval = null;
-            const amountUSD = (player.score * 0.1).toFixed(2);
-            const rate = window.currentBcvRate || 36.5;
-            const amountVES = (amountUSD * rate).toFixed(2);
+
+    function selectSkin(skinKey) {
+        if (skinCatalog[skinKey]) {
+            player.skin = skinCatalog[skinKey];
+            showFloatingMessage(`Skin actualizada: ${skinCatalog[skinKey].name}`);
+        }
+    }
+    window.selectSkin = selectSkin;
+
+    function ensureAdminControls() {
+        if (document.getElementById('adminGiftValue')) return;
+
+        const panelBody = document.getElementById('adminPanelBody');
+        if (!panelBody) return;
+
+        const giftBlock = document.createElement('div');
+        giftBlock.style.marginBottom = '8px';
+        giftBlock.innerHTML = `
+            <label style="font-size: 0.75rem; color: #94a3b8;">Valor del Regalo ($ USD):</label>
+            <input type="number" id="adminGiftValue" value="1.00" step="0.1" style="width: 100%; padding: 5px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px; margin-top: 3px; font-size: 0.85rem;">
+        `;
+        panelBody.insertBefore(giftBlock, panelBody.firstChild);
+    }
+
+    function injectAdminPanel() {
+        if (document.getElementById('adminPanelContainer')) return;
+        const panel = document.createElement('div');
+        panel.id = 'adminPanelContainer';
+        panel.style.cssText = 'position: fixed; top: 20px; left: 20px; z-index: 9999; background: rgba(15, 23, 42, 0.95); border: 2px solid #38bdf8; padding: 12px; border-radius: 12px; color: #fff; font-family: sans-serif; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 260px; transition: all 0.3s ease;';
+        panel.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleAdminPanelCollapse()">
+                <h3 style="margin: 0; font-size: 0.95rem; color: #38bdf8;">👑 Admin Panel</h3>
+                <span id="adminToggleIcon" style="font-size: 1rem; color: #38bdf8; font-weight: bold;">[-]</span>
+            </div>
+            <div id="adminPanelBody" style="margin-top: 10px; display: block;">
+                <button onclick="adminDropGift('chest')" style="width: 100%; padding: 7px; margin-bottom: 5px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🎁 Cofre</button>
+                <button onclick="adminDropGift('star')" style="width: 100%; padding: 7px; margin-bottom: 8px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⭐ Estrella</button>
+                <button id="adminFreeCamBtn" onclick="toggleAdminFreeCam()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🗺️ Navegación Libre: OFF</button>
+                <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">👻 Modo Fantasma: OFF</button>
+                <button onclick="adminSpawnDirect()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⚡ Spawn instantáneo</button>
+                <button onclick="adminFreeEntry()" style="width: 100%; padding: 7px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🚀 Ingreso VIP</button>
+            </div>
+        `;
+        document.body.appendChild(panel);
+        ensureAdminControls();
+    }
+
+    window.toggleAdminPanelCollapse = function() {
+        const body = document.getElementById('adminPanelBody');
+        const icon = document.getElementById('adminToggleIcon');
+        const panel = document.getElementById('adminPanelContainer');
+        if (!body || !icon || !panel) return;
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? 'block' : 'none';
+        icon.innerText = collapsed ? '[-]' : '[+]';
+        panel.style.width = collapsed ? '260px' : '140px';
+        adminPanelCollapsed = !collapsed;
+    };
+
+    async function initSupabase() {
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/config`);
+            const config = await response.json();
+            if (config.admin_user_id) backendAdminId = config.admin_user_id;
+
+            if (config.supabase_url && config.supabase_anon_key && window.supabase) {
+                supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
+                const { data: sessionData } = await supabaseClient.auth.getSession();
+                if (sessionData?.session?.user) {
+                    currentUserId = sessionData.session.user.id;
+                    localStorage.setItem('supabase_user_id', currentUserId);
+                }
+                if (backendAdminId && currentUserId === backendAdminId) {
+                    isAdminUser = true;
+                    showFloatingMessage('👑 ¡Bienvenido Administrador! Panel VIP activado.', '#38bdf8');
+                    injectAdminPanel();
+                }
+            }
+        } catch (error) {
+            console.error('Error inicializando Supabase:', error);
+        }
+    }
+
+    window.toggleAdminFreeCam = function() {
+        if (!isAdminUser) return;
+        adminFreeCam = !adminFreeCam;
+        if (adminFreeCam) {
+            player.alive = false;
+            adminCamX = player.x;
+            adminCamY = player.y;
+        }
+        const btn = document.getElementById('adminFreeCamBtn');
+        if (btn) {
+            btn.style.background = adminFreeCam ? '#0ea5e9' : '#64748b';
+            btn.innerText = adminFreeCam ? '🗺️ Navegación Libre: ON' : '🗺️ Navegación Libre: OFF';
+        }
+        showFloatingMessage(adminFreeCam ? '🗺️ Navegación libre activada.' : '🗺️ Navegación libre desactivada.', adminFreeCam ? '#0ea5e9' : '#10b981');
+    };
+
+    window.adminSpawnDirect = function() {
+        if (!isAdminUser) return;
+        adminFreeCam = false;
+        closeModal();
+        startArenaGame();
+        showFloatingMessage('🎮 Spawn instantáneo de Administrador.', '#06b6d4');
+    };
+
+    window.adminFreeEntry = function() {
+        if (!isAdminUser) return;
+        closeModal();
+        startArenaGame();
+        showFloatingMessage('🚀 Ingreso VIP Gratuito aplicado.', '#8b5cf6');
+    };
+
+    window.toggleAdminInvisible = function() {
+        if (!isAdminUser) return;
+        adminInvisible = !adminInvisible;
+        player.invincible = adminInvisible;
+        const btn = document.getElementById('adminInvisBtn');
+        if (btn) {
+            btn.style.background = adminInvisible ? '#ef4444' : '#64748b';
+            btn.innerText = adminInvisible ? '👻 Modo Fantasma: ON' : '👻 Modo Fantasma: OFF';
+        }
+        showFloatingMessage(adminInvisible ? '👻 Modo Fantasma activo.' : '👻 Modo Fantasma inactivo.', adminInvisible ? '#ef4444' : '#10b981');
+    };
+
+    window.adminDropGift = function(type) {
+        if (!isAdminUser) return;
+        const giftInput = document.getElementById('adminGiftValue');
+        const val = giftInput ? parseFloat(giftInput.value) || 1 : 1;
+        const targetX = mouse.x + camera.x;
+        const targetY = mouse.y + camera.y;
+        const color = type === 'chest' ? '#eab308' : '#facc15';
+        goldCoins.push({ x: targetX, y: targetY, radius: type === 'chest' ? 10 : 8, color, value: val });
+        showFloatingMessage(`🎁 ¡${type === 'chest' ? 'Cofre' : 'Estrella'} desplegado! ($${val.toFixed(2)})`, '#10b981');
+    };
+
+    async function syncBcvRate() {
+        try {
+            const response = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
+            const data = await response.json();
+            if (data && data.promedio) {
+                const rate = data.promedio.toFixed(2);
+                const rateElem = document.getElementById('bcvRate');
+                if (rateElem) rateElem.innerText = `${rate}`;
+                window.currentBcvRate = parseFloat(rate);
+            }
+        } catch (error) {
+            console.error('Error consultando tasa BCV:', error);
+        }
+    }
+
+    async function syncUserWallet() {
+        if (!currentUserId || currentUserId === defaultUserId) return;
+        try {
+            if (!supabaseClient) await initSupabase();
+            if (!supabaseClient) return;
+            const { data: wallet } = await supabaseClient.from('user_wallets').select('balance_usd').eq('user_id', currentUserId).single();
+            if (wallet) {
+                const balElem = document.getElementById('userBalance');
+                if (balElem) balElem.innerText = `$${parseFloat(wallet.balance_usd).toFixed(2)} USD`;
+            }
+        } catch (error) {
+            console.error('Error sincronizando billetera:', error);
+        }
+    }
+
+    function startWaitingForApproval() {
+        showFloatingMessage('⏳ Pago reportado. Esperando aprobación...', '#eab308');
+        const modalTitle = document.getElementById('modalTitle');
+        if (modalTitle) modalTitle.innerText = 'Verificando Pago ($2.00)';
+        const modalBody = document.getElementById('modalBodyContent');
+        if (modalBody) {
+            modalBody.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 2.5rem; margin-bottom: 10px;">⏳</div>
+                    <p style="color: #eab308; font-weight: bold; font-size: 1.1rem;">Comprobante enviado al Administrador.</p>
+                    <p style="font-size: 0.9rem; color: #94a3b8; margin-top: 8px;">En cuanto se apruebe en Telegram, entrarás automáticamente...</p>
+                </div>
+            `;
+        }
+        if (verificationInterval) clearInterval(verificationInterval);
+        verificationInterval = setInterval(async () => {
+            if (!supabaseClient || !currentUserId) return;
             try {
-                const response = await fetch(`${BACKEND_URL}/api/cashout/request`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: currentUserId, amount_usd: amountUSD, amount_ves: amountVES, bcv_rate: rate })
-                });
-                const result = await response.json();
-                if (response.ok && result.success) {
-                    startWaitingForCashOutApproval(amountUSD);
-                } else {
-                    showFloatingMessage(result.error || 'Error al solicitar retiro.', '#ef4444');
+                const { data: wallet } = await supabaseClient.from('user_wallets').select('balance_usd').eq('user_id', currentUserId).single();
+                if (wallet && parseFloat(wallet.balance_usd) >= ENTRY_FEE) {
+                    clearInterval(verificationInterval);
+                    verificationInterval = null;
+                    showFloatingMessage('¡Pago aprobado! Entrando...', '#10b981');
+                    closeModal();
+                    const newBalance = parseFloat(wallet.balance_usd) - ENTRY_FEE;
+                    await supabaseClient.from('user_wallets').update({ balance_usd: newBalance }).eq('user_id', currentUserId);
+                    const balElem = document.getElementById('userBalance');
+                    if (balElem) balElem.innerText = `$${newBalance.toFixed(2)} USD`;
+                    startArenaGame();
+                }
+            } catch (error) {
+                console.error('Error verificando aprobación automática:', error);
+            }
+        }, 3000);
+    }
+
+    function startArenaGame() {
+        isGameActive = true;
+        player.alive = true;
+        player.isSpectator = false;
+        adminFreeCam = false;
+
+        const spawnTarget = bots.length > 0 ? bots[Math.floor(Math.random() * bots.length)] : { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
+        player.x = Math.max(300, Math.min(WORLD_WIDTH - 300, spawnTarget.x + (Math.random() - 0.5) * 600));
+        player.y = Math.max(300, Math.min(WORLD_HEIGHT - 300, spawnTarget.y + (Math.random() - 0.5) * 600));
+        player.score = 0;
+        player.maxSegments = INITIAL_SEGMENTS;
+        player.trail = [];
+        player.invincible = true;
+        if (!adminInvisible) {
+            setTimeout(() => {
+                player.invincible = false;
+                showFloatingMessage('🛡️ Escudo de entrada finalizado.', '#eab308');
+            }, 4000);
+        }
+        const gallery = document.getElementById('skinGallery');
+        if (gallery) gallery.style.display = 'none';
+        showFloatingMessage('🛡️ Partida iniciada con éxito.', '#10b981');
+    }
+
+    async function submitPayment() {
+        const refInput = document.getElementById('refInput');
+        const ref = refInput ? refInput.value.trim() : '';
+        if (!ref) {
+            showFloatingMessage('Por favor ingresa el número de referencia.', '#ef4444');
+            return;
+        }
+
+        const rate = window.currentBcvRate || 36.5;
+        const amountUSD = 2.0;
+        const amountVES = (amountUSD * rate).toFixed(2);
+        const payload = {
+            user_id: currentUserId,
+            amount_usd: amountUSD,
+            bcv_rate: rate,
+            amount_ves: amountVES,
+            reference_number: ref,
+            phone_number: '0412-1234567'
+        };
+
+        try {
+            showFloatingMessage('Enviando comprobante...', '#eab308');
+            const response = await fetch(`${BACKEND_URL}/api/payment/report`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (response.ok && result.success) {
+                showFloatingMessage('¡Pago reportado con éxito!', '#10b981');
+                if (refInput) refInput.value = '';
+                startWaitingForApproval();
+            } else {
+                showFloatingMessage(result.error || 'Error al registrar el pago.', '#ef4444');
+            }
+        } catch (error) {
+            console.error('Error al conectar con backend:', error);
+            showFloatingMessage('Error de conexión con el backend.', '#ef4444');
+        }
+    }
+    window.submitPayment = submitPayment;
+
+    window.attemptCashOut = function() {
+        if (player.score < player.cashOutGoal) {
+            showFloatingMessage('Aún no has llenado la barra para retirarte.', '#ef4444');
+            return;
+        }
+        if (player.cashOutInterval) return;
+        player.alive = false;
+        player.isSpectator = true;
+        let secondsLeft = 10;
+        showFloatingMessage(`⏳ Retiro en proceso. Espectador (${secondsLeft}s)...`, '#eab308');
+        player.cashOutInterval = setInterval(async () => {
+            secondsLeft--;
+            if (secondsLeft > 0) {
+                showFloatingMessage(`⏳ Procesando cobro... ${secondsLeft}s`, '#eab308');
+            } else {
+                clearInterval(player.cashOutInterval);
+                player.cashOutInterval = null;
+                const amountUSD = (player.score * 0.1).toFixed(2);
+                const rate = window.currentBcvRate || 36.5;
+                const amountVES = (amountUSD * rate).toFixed(2);
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/cashout/request`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: currentUserId, amount_usd: amountUSD, amount_ves: amountVES, bcv_rate: rate })
+                    });
+                    const result = await response.json();
+                    if (response.ok && result.success) {
+                        startWaitingForCashOutApproval(amountUSD);
+                    } else {
+                        showFloatingMessage(result.error || 'Error al solicitar retiro.', '#ef4444');
+                        closeModal();
+                        player.isSpectator = false;
+                        const gallery = document.getElementById('skinGallery');
+                        if (gallery) gallery.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('Error al solicitar retiro:', error);
+                    showFloatingMessage('Error de conexión.', '#ef4444');
                     closeModal();
                     player.isSpectator = false;
                     const gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
                 }
+            }
+        }, 1000);
+    };
+
+    function startWaitingForCashOutApproval(amountUSD) {
+        if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
+        cashOutCheckInterval = setInterval(async () => {
+            if (!supabaseClient || !currentUserId) return;
+            try {
+                const { data: txs } = await supabaseClient.from('payment_transactions').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false }).limit(1);
+                if (txs && txs.length > 0) {
+                    const tx = txs[0];
+                    if (tx.status === 'paid') {
+                        clearInterval(cashOutCheckInterval);
+                        cashOutCheckInterval = null;
+                        showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado! Ref: ${tx.reference_number}`, '#10b981');
+                        player.score = 0;
+                        player.alive = false;
+                        player.isSpectator = false;
+                        isGameActive = false;
+                        player.maxSegments = INITIAL_SEGMENTS;
+                        player.trail = [];
+                        const gallery = document.getElementById('skinGallery');
+                        if (gallery) gallery.style.display = 'block';
+                    }
+                }
             } catch (error) {
-                console.error('Error al solicitar retiro:', error);
-                showFloatingMessage('Error de conexión.', '#ef4444');
-                closeModal();
-                player.isSpectator = false;
-                const gallery = document.getElementById('skinGallery');
-                if (gallery) gallery.style.display = 'block';
+                console.error('Error en sondeo de retiro:', error);
             }
-        }
-    }, 1000);
-};
+        }, 4000);
+    }
 
-function startWaitingForCashOutApproval(amountUSD) {
-    if (cashOutCheckInterval) clearInterval(cashOutCheckInterval);
-    cashOutCheckInterval = setInterval(async () => {
-        if (!supabaseClient || !currentUserId) return;
-        try {
-            const { data: txs } = await supabaseClient.from('payment_transactions').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false }).limit(1);
-            if (txs && txs.length > 0) {
-                const tx = txs[0];
-                if (tx.status === 'paid') {
-                    clearInterval(cashOutCheckInterval);
-                    cashOutCheckInterval = null;
-                    showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado! Ref: ${tx.reference_number}`, '#10b981');
-                    player.score = 0;
-                    player.alive = false;
-                    player.isSpectator = false;
-                    isGameActive = false;
-                    player.maxSegments = INITIAL_SEGMENTS;
-                    player.trail = [];
-                    const gallery = document.getElementById('skinGallery');
-                    if (gallery) gallery.style.display = 'block';
-                }
+    window.forfeitMatch = function() {
+        if (isGameActive && player.alive) {
+            if (player.score > 0) {
+                createAccumulatedCoinsFromPlayer(player.trail, player.score);
+                showFloatingMessage('💥 Abandonaste. Tu dinero quedó en la arena.', '#ef4444');
+            } else {
+                showFloatingMessage('Saliste de la partida.', '#64748b');
             }
-        } catch (error) {
-            console.error('Error en sondeo de retiro:', error);
+            player.alive = false;
+            isGameActive = false;
+            player.score = 0;
+            player.trail = [];
+            const gallery = document.getElementById('skinGallery');
+            if (gallery) gallery.style.display = 'block';
         }
-    }, 4000);
-}
+    };
 
-window.forfeitMatch = function() {
-    if (isGameActive && player.alive) {
-        if (player.score > 0) {
-            createAccumulatedCoinsFromPlayer(player.trail, player.score);
-            showFloatingMessage('💥 Abandonaste. Tu dinero quedó en la arena.', '#ef4444');
-        } else {
-            showFloatingMessage('Saliste de la partida.', '#64748b');
+    window.addEventListener('beforeunload', () => {
+        if (isGameActive && player.alive && player.score > 0) {
+            player.score = 0;
         }
-        player.alive = false;
-        isGameActive = false;
-        player.score = 0;
-        player.trail = [];
-        const gallery = document.getElementById('skinGallery');
-        if (gallery) gallery.style.display = 'block';
+    });
+
+    function spawnPellet() {
+        foodPellets.push({ x: Math.random() * WORLD_WIDTH, y: Math.random() * WORLD_HEIGHT, radius: 4.5, color: Math.random() > 0.5 ? '#ef4444' : '#10b981' });
     }
-};
 
-window.addEventListener('beforeunload', () => {
-    if (isGameActive && player.alive && player.score > 0) {
-        player.score = 0;
-    }
-});
-
-function spawnPellet() {
-    foodPellets.push({ x: Math.random() * WORLD_WIDTH, y: Math.random() * WORLD_HEIGHT, radius: 4.5, color: Math.random() > 0.5 ? '#ef4444' : '#10b981' });
-}
-
-function createGoldCoinsFromPlayerDeath(trail) {
-    const prizePool = 1.0;
-    const coinsCount = 50;
-    const valuePerCoin = prizePool / coinsCount;
-    for (let i = 0; i < coinsCount; i++) {
-        const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
-        goldCoins.push({ x: randomSegment.x + (Math.random() - 0.5) * 50, y: randomSegment.y + (Math.random() - 0.5) * 50, radius: 6, color: '#eab308', value: valuePerCoin });
-    }
-}
-
-function createAccumulatedCoinsFromPlayer(trail, totalAmount) {
-    const coinsCount = Math.max(10, Math.floor(totalAmount * 50));
-    const valuePerCoin = totalAmount / coinsCount;
-    for (let i = 0; i < coinsCount; i++) {
-        const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
-        goldCoins.push({ x: randomSegment.x + (Math.random() - 0.5) * 60, y: randomSegment.y + (Math.random() - 0.5) * 60, radius: 6, color: '#eab308', value: valuePerCoin });
-    }
-}
-
-function createCoinsOrPelletsFromBotDeath(trail, botScore) {
-    if (botScore > 0) {
-        const coinsCount = Math.max(10, Math.floor(botScore * 50));
-        const valuePerCoin = botScore / coinsCount;
+    function createGoldCoinsFromPlayerDeath(trail) {
+        const prizePool = 1.0;
+        const coinsCount = 50;
+        const valuePerCoin = prizePool / coinsCount;
         for (let i = 0; i < coinsCount; i++) {
-            const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: 0, y: 0 };
-            goldCoins.push({ x: randomSegment.x + (Math.random() - 0.5) * 40, y: randomSegment.y + (Math.random() - 0.5) * 40, radius: 6, color: '#eab308', value: valuePerCoin });
-        }
-    } else {
-        for (let i = 0; i < 15; i++) {
-            const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: 0, y: 0 };
-            foodPellets.push({ x: randomSegment.x + (Math.random() - 0.5) * 40, y: randomSegment.y + (Math.random() - 0.5) * 40, radius: 4.5, color: Math.random() > 0.5 ? '#ef4444' : '#10b981' });
+            const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
+            goldCoins.push({ x: randomSegment.x + (Math.random() - 0.5) * 50, y: randomSegment.y + (Math.random() - 0.5) * 50, radius: 6, color: '#eab308', value: valuePerCoin });
         }
     }
-}
 
-const botNamesList = ['ViperKilla', 'ShadowHunter', 'AlphaOmega', 'NeonVenom', 'ToxicSerpent', 'ApexPredator', 'CyberCobra', 'GoldenScale', 'DragonsLair', 'TitanPython', 'GatorBite', 'HyperSpeed', 'ZeroTolerance', 'PhantomSnake', 'DarkRider', 'FlameThrower', 'VorticeXX', 'SteelFang', 'MegaSlayer', 'ChaosReaper'];
-
-function spawnBorderBot(name, skin) {
-    let edge = Math.floor(Math.random() * 4);
-    let sx, sy, sAngle;
-    if (edge === 0) { sx = 50; sy = Math.random() * WORLD_HEIGHT; sAngle = 0; }
-    else if (edge === 1) { sx = WORLD_WIDTH - 50; sy = Math.random() * WORLD_HEIGHT; sAngle = Math.PI; }
-    else if (edge === 2) { sx = Math.random() * WORLD_WIDTH; sy = 50; sAngle = Math.PI / 2; }
-    else { sx = Math.random() * WORLD_WIDTH; sy = WORLD_HEIGHT - 50; sAngle = -Math.PI / 2; }
-
-    bots.push({ name, skin, x: sx, y: sy, radius: 18, maxSegments: INITIAL_SEGMENTS, speed: 5, angle: sAngle, changeTimer: 0, trail: [], score: 0, alive: true });
-}
-
-for (let i = 0; i < 20; i++) {
-    const randomSkinKey = skinKeys[Math.floor(Math.random() * skinKeys.length)];
-    spawnBorderBot(botNamesList[i] || `Bot_${i}`, skinCatalog[randomSkinKey]);
-}
-
-for (let i = 0; i < 400; i++) spawnPellet();
-
-window.addEventListener('mousemove', (event) => {
-    mouse.x = event.clientX;
-    mouse.y = event.clientY;
-});
-
-function openModal() {
-    const modalTitle = document.getElementById('modalTitle');
-    if (modalTitle) modalTitle.innerText = 'Recargar Entrada ($2.00)';
-    const modalBody = document.getElementById('modalBodyContent');
-    if (modalBody) {
-        modalBody.innerHTML = `
-            <p>Costo de entrada a la partida: <strong>$2.00 USD</strong></p>
-            <div class="payment-info" style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px; margin-top: 8px; font-size: 0.85rem; color: #94a3b8;">
-                • Banco: Banesco (0134)<br>
-                • Teléfono: 0412-1234567<br>
-                • C.I.: V-12.345.678
-            </div>
-            <div style="margin-top: 15px;">
-                <label style="font-size: 0.85rem; color: #94a3b8;">Número de Referencia:</label>
-                <input type="text" id="refInput" class="form-control" placeholder="Ej: 123456" style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px;">
-            </div>
-            <button class="btn-action" style="width: 100%; padding: 12px; margin-top: 15px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;" onclick="submitPayment()">Enviar Comprobante</button>
-        `;
+    function createAccumulatedCoinsFromPlayer(trail, totalAmount) {
+        const coinsCount = Math.max(10, Math.floor(totalAmount * 50));
+        const valuePerCoin = totalAmount / coinsCount;
+        for (let i = 0; i < coinsCount; i++) {
+            const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: player.x, y: player.y };
+            goldCoins.push({ x: randomSegment.x + (Math.random() - 0.5) * 60, y: randomSegment.y + (Math.random() - 0.5) * 60, radius: 6, color: '#eab308', value: valuePerCoin });
+        }
     }
-    const modal = document.getElementById('depositModal');
-    if (modal) modal.style.display = 'flex';
-}
 
-function closeModal() {
-    const modal = document.getElementById('depositModal');
-    if (modal) modal.style.display = 'none';
-}
-
-function drawHexMap(ctx) {
-    const hexRadius = 45;
-    const hexWidth = Math.sqrt(3) * hexRadius;
-    const hexHeight = 2 * hexRadius;
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 2.0;
-    ctx.fillStyle = '#070c16';
-
-    const startX = Math.floor(camera.x / hexWidth) * hexWidth - hexWidth;
-    const endX = startX + canvas.width + hexWidth * 2;
-    const startY = Math.floor(camera.y / (hexHeight * 0.75)) * (hexHeight * 0.75) - hexHeight;
-    const endY = startY + canvas.height + hexHeight * 2;
-
-    for (let y = startY; y < endY; y += hexHeight * 0.75) {
-        const isOffset = Math.floor(y / (hexHeight * 0.75)) % 2 !== 0;
-        const xOffset = isOffset ? hexWidth / 2 : 0;
-        for (let x = startX + xOffset; x < endX; x += hexWidth) {
-            ctx.beginPath();
-            for (let i = 0; i < 6; i++) {
-                const angle = (Math.PI / 3) * i;
-                const hx = x + hexRadius * Math.cos(angle);
-                const hy = y + hexRadius * Math.sin(angle);
-                if (i === 0) ctx.moveTo(hx, hy);
-                else ctx.lineTo(hx, hy);
+    function createCoinsOrPelletsFromBotDeath(trail, botScore) {
+        if (botScore > 0) {
+            const coinsCount = Math.max(10, Math.floor(botScore * 50));
+            const valuePerCoin = botScore / coinsCount;
+            for (let i = 0; i < coinsCount; i++) {
+                const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: 0, y: 0 };
+                goldCoins.push({ x: randomSegment.x + (Math.random() - 0.5) * 40, y: randomSegment.y + (Math.random() - 0.5) * 40, radius: 6, color: '#eab308', value: valuePerCoin });
             }
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-        }
-    }
-}
-
-function drawOrganicBody(ctx, trail, fixedRadius, skin) {
-    for (let i = trail.length - 1; i >= 0; i -= 2) {
-        const p = trail[i];
-        if (!p) continue;
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.fillStyle = skin.secondaryColor;
-        ctx.beginPath(); ctx.arc(0, 0, fixedRadius, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = skin.primaryColor;
-        ctx.beginPath(); ctx.arc(0, 0, fixedRadius * 0.8, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
-    }
-}
-
-function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.shadowColor = skin.primaryColor;
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = skin.primaryColor;
-    ctx.beginPath(); ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(radius * 0.35, -radius * 0.45, 5.5, 0, Math.PI * 2);
-    ctx.arc(radius * 0.35, radius * 0.45, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.arc(radius * 0.45, -radius * 0.45, 2.5, 0, Math.PI * 2);
-    ctx.arc(radius * 0.45, radius * 0.45, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    ctx.save();
-    const labelText = `$${score.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    ctx.font = 'bold 13px sans-serif';
-    const textWidth = ctx.measureText(labelText).width;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-    ctx.strokeStyle = '#10b981';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(x - textWidth / 2 - 12, y - radius - 34, textWidth + 24, 24, 8);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#10b981';
-    ctx.textAlign = 'center';
-    ctx.fillText(labelText, x, y - radius - 18);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 11px sans-serif';
-    ctx.fillText(name, x, y - radius - 42);
-    ctx.restore();
-}
-
-function gameLoop() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (adminFreeCam) {
-        const moveSpeed = 15;
-        if (mouse.x < 100) adminCamX -= moveSpeed;
-        if (mouse.x > canvas.width - 100) adminCamX += moveSpeed;
-        if (mouse.y < 100) adminCamY -= moveSpeed;
-        if (mouse.y > canvas.height - 100) adminCamY += moveSpeed;
-        adminCamX = Math.max(0, Math.min(WORLD_WIDTH, adminCamX));
-        adminCamY = Math.max(0, Math.min(WORLD_HEIGHT, adminCamY));
-        camera.update(adminCamX, adminCamY);
-    } else if (player.alive && isGameActive) {
-        const screenCenterX = canvas.width / 2;
-        const screenCenterY = canvas.height / 2;
-        const angle = Math.atan2(mouse.y - screenCenterY, mouse.x - screenCenterX);
-        player.x += Math.cos(angle) * player.speed;
-        player.y += Math.sin(angle) * player.speed;
-        player.x = Math.max(30, Math.min(WORLD_WIDTH - 30, player.x));
-        player.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, player.y));
-        player.trail.push({ x: player.x, y: player.y, angle });
-        if (player.trail.length > player.maxSegments) player.trail.shift();
-        camera.update(player.x, player.y);
-    } else if (player.isSpectator) {
-        const leaderBot = bots.length > 0 ? bots[0] : null;
-        if (leaderBot) camera.update(leaderBot.x, leaderBot.y);
-    }
-
-    ctx.save();
-    ctx.translate(-camera.x, -camera.y);
-    drawHexMap(ctx);
-
-    for (let i = foodPellets.length - 1; i >= 0; i--) {
-        const p = foodPellets[i];
-        ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
-        if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
-            if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += 1;
-            foodPellets.splice(i, 1);
-            spawnPellet();
-        }
-    }
-
-    for (let i = goldCoins.length - 1; i >= 0; i--) {
-        const coin = goldCoins[i];
-        ctx.fillStyle = coin.color;
-        ctx.beginPath(); ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2); ctx.fill();
-        let coinEaten = false;
-        if (player.alive && isGameActive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
-            player.score += coin.value;
-            if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += Math.min(2, MAX_SEGMENTS_LIMIT - player.maxSegments);
-            goldCoins.splice(i, 1);
-            continue;
-        }
-
-        for (const bot of bots) {
-            if (bot.alive && Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
-                bot.score += coin.value;
-                if (bot.maxSegments < MAX_SEGMENTS_LIMIT) bot.maxSegments += 1;
-                goldCoins.splice(i, 1);
-                coinEaten = true;
-                break;
-            }
-        }
-        if (coinEaten) continue;
-    }
-
-    for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
-        const bot = bots[bIndex];
-        if (!bot.alive) continue;
-
-        let closestDist = 9999;
-        let targetX = null;
-        let targetY = null;
-
-        for (const coin of goldCoins) {
-            const d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
-            if (d < 600 && d < closestDist) {
-                closestDist = d;
-                targetX = coin.x;
-                targetY = coin.y;
-            }
-        }
-
-        if (!targetX) {
-            for (const pellet of foodPellets) {
-                const d = Math.hypot(bot.x - pellet.x, bot.y - pellet.y);
-                if (d < 300 && d < closestDist) {
-                    closestDist = d;
-                    targetX = pellet.x;
-                    targetY = pellet.y;
-                }
-            }
-        }
-
-        if (targetX !== null && targetY !== null) {
-            const desiredAngle = Math.atan2(targetY - bot.y, targetX - bot.x);
-            const angleDiff = Math.atan2(Math.sin(desiredAngle - bot.angle), Math.cos(desiredAngle - bot.angle));
-            bot.angle += angleDiff * 0.15;
-            bot.changeTimer = 0;
         } else {
-            bot.changeTimer++;
-            if (bot.changeTimer > 30) {
-                bot.angle += (Math.random() - 0.5) * 1.5;
-                bot.changeTimer = 0;
+            for (let i = 0; i < 15; i++) {
+                const randomSegment = trail[Math.floor(Math.random() * trail.length)] || { x: 0, y: 0 };
+                foodPellets.push({ x: randomSegment.x + (Math.random() - 0.5) * 40, y: randomSegment.y + (Math.random() - 0.5) * 40, radius: 4.5, color: Math.random() > 0.5 ? '#ef4444' : '#10b981' });
             }
-        }
-
-        bot.x += Math.cos(bot.angle) * bot.speed;
-        bot.y += Math.sin(bot.angle) * bot.speed;
-        if (bot.x < 100) { bot.x = 100; bot.angle = 0 + (Math.random() - 0.5) * 0.5; }
-        if (bot.x > WORLD_WIDTH - 100) { bot.x = WORLD_WIDTH - 100; bot.angle = Math.PI + (Math.random() - 0.5) * 0.5; }
-        if (bot.y < 100) { bot.y = 100; bot.angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5; }
-        if (bot.y > WORLD_HEIGHT - 100) { bot.y = WORLD_HEIGHT - 100; bot.angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5; }
-
-        bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
-        if (bot.trail.length > bot.maxSegments) bot.trail.shift();
-
-        if (player.alive && isGameActive && !player.invincible && !(isAdminUser && adminInvisible)) {
-            for (const segment of bot.trail) {
-                if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
-                    player.alive = false;
-                    isGameActive = false;
-                    bot.score += 1;
-                    bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
-                    createGoldCoinsFromPlayerDeath(player.trail);
-                    showFloatingMessage(`💥 ¡Colisión con ${bot.name}!`, '#ef4444');
-                    const gallery = document.getElementById('skinGallery');
-                    if (gallery) gallery.style.display = 'block';
-                    break;
-                }
-            }
-        }
-
-        if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
-            for (const segment of player.trail) {
-                if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
-                    createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
-                    showFloatingMessage(`¡${bot.name} eliminado por ti!`, '#10b981');
-                    const deadName = bot.name;
-                    const deadSkin = bot.skin;
-                    bots.splice(bIndex, 1);
-                    setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
-                    break;
-                }
-            }
-        }
-
-        if (bot.alive) {
-            drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin);
-            drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
         }
     }
 
-    if (player.alive && isGameActive) {
-        const lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-        if (!(isAdminUser && adminInvisible)) {
-            drawOrganicBody(ctx, player.trail, player.radius, player.skin);
-            drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score);
-        } else {
+    const botNamesList = ['ViperKilla', 'ShadowHunter', 'AlphaOmega', 'NeonVenom', 'ToxicSerpent', 'ApexPredator', 'CyberCobra', 'GoldenScale', 'DragonsLair', 'TitanPython', 'GatorBite', 'HyperSpeed', 'ZeroTolerance', 'PhantomSnake', 'DarkRider', 'FlameThrower', 'VorticeXX', 'SteelFang', 'MegaSlayer', 'ChaosReaper'];
+
+    function spawnBorderBot(name, skin) {
+        let edge = Math.floor(Math.random() * 4);
+        let sx, sy, sAngle;
+        if (edge === 0) { sx = 50; sy = Math.random() * WORLD_HEIGHT; sAngle = 0; }
+        else if (edge === 1) { sx = WORLD_WIDTH - 50; sy = Math.random() * WORLD_HEIGHT; sAngle = Math.PI; }
+        else if (edge === 2) { sx = Math.random() * WORLD_WIDTH; sy = 50; sAngle = Math.PI / 2; }
+        else { sx = Math.random() * WORLD_WIDTH; sy = WORLD_HEIGHT - 50; sAngle = -Math.PI / 2; }
+
+        bots.push({ name, skin, x: sx, y: sy, radius: 18, maxSegments: INITIAL_SEGMENTS, speed: 5, angle: sAngle, changeTimer: 0, trail: [], score: 0, alive: true });
+    }
+
+    for (let i = 0; i < 20; i++) {
+        const randomSkinKey = skinKeys[Math.floor(Math.random() * skinKeys.length)];
+        spawnBorderBot(botNamesList[i] || `Bot_${i}`, skinCatalog[randomSkinKey]);
+    }
+    for (let i = 0; i < 400; i++) spawnPellet();
+
+    window.addEventListener('mousemove', (event) => {
+        mouse.x = event.clientX;
+        mouse.y = event.clientY;
+    });
+
+    function openModal() {
+        const modalTitle = document.getElementById('modalTitle');
+        if (modalTitle) modalTitle.innerText = 'Recargar Entrada ($2.00)';
+        const modalBody = document.getElementById('modalBodyContent');
+        if (modalBody) {
+            modalBody.innerHTML = `
+                <p>Costo de entrada a la partida: <strong>$2.00 USD</strong></p>
+                <div class="payment-info" style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px; margin-top: 8px; font-size: 0.85rem; color: #94a3b8;">
+                    • Banco: Banesco (0134)<br>
+                    • Teléfono: 0412-1234567<br>
+                    • C.I.: V-12.345.678
+                </div>
+                <div style="margin-top: 15px;">
+                    <label style="font-size: 0.85rem; color: #94a3b8;">Número de Referencia:</label>
+                    <input type="text" id="refInput" class="form-control" placeholder="Ej: 123456" style="width: 100%; padding: 8px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px;">
+                </div>
+                <button class="btn-action" style="width: 100%; padding: 12px; margin-top: 15px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;" onclick="submitPayment()">Enviar Comprobante</button>
+            `;
+        }
+        const modal = document.getElementById('depositModal');
+        if (modal) modal.style.display = 'flex';
+    }
+    window.openModal = openModal;
+
+    function closeModal() {
+        const modal = document.getElementById('depositModal');
+        if (modal) modal.style.display = 'none';
+    }
+    window.closeModal = closeModal;
+
+    function drawHexMap(ctx) {
+        const hexRadius = 45;
+        const hexWidth = Math.sqrt(3) * hexRadius;
+        const hexHeight = 2 * hexRadius;
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 2.0;
+        ctx.fillStyle = '#070c16';
+
+        const startX = Math.floor(camera.x / hexWidth) * hexWidth - hexWidth;
+        const endX = startX + canvas.width + hexWidth * 2;
+        const startY = Math.floor(camera.y / (hexHeight * 0.75)) * (hexHeight * 0.75) - hexHeight;
+        const endY = startY + canvas.height + hexHeight * 2;
+
+        for (let y = startY; y < endY; y += hexHeight * 0.75) {
+            const isOffset = Math.floor(y / (hexHeight * 0.75)) % 2 !== 0;
+            const xOffset = isOffset ? hexWidth / 2 : 0;
+            for (let x = startX + xOffset; x < endX; x += hexWidth) {
+                ctx.beginPath();
+                for (let i = 0; i < 6; i++) {
+                    const angle = (Math.PI / 3) * i;
+                    const hx = x + hexRadius * Math.cos(angle);
+                    const hy = y + hexRadius * Math.sin(angle);
+                    if (i === 0) ctx.moveTo(hx, hy);
+                    else ctx.lineTo(hx, hy);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+    }
+
+    function drawOrganicBody(ctx, trail, fixedRadius, skin) {
+        for (let i = trail.length - 1; i >= 0; i -= 2) {
+            const p = trail[i];
+            if (!p) continue;
             ctx.save();
-            ctx.globalAlpha = 0.35;
-            drawOrganicBody(ctx, player.trail, player.radius, player.skin);
-            drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, `${player.name} (👻)`, player.score);
+            ctx.translate(p.x, p.y);
+            ctx.fillStyle = skin.secondaryColor;
+            ctx.beginPath(); ctx.arc(0, 0, fixedRadius, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = skin.primaryColor;
+            ctx.beginPath(); ctx.arc(0, 0, fixedRadius * 0.8, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
         }
     }
 
-    ctx.restore();
+    function drawAdvancedHead(ctx, x, y, radius, angle, skin, name, score) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        ctx.shadowColor = skin.primaryColor;
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = skin.primaryColor;
+        ctx.beginPath(); ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(radius * 0.35, -radius * 0.45, 5.5, 0, Math.PI * 2);
+        ctx.arc(radius * 0.35, radius * 0.45, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(radius * 0.45, -radius * 0.45, 2.5, 0, Math.PI * 2);
+        ctx.arc(radius * 0.45, radius * 0.45, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
 
-    const progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
-    const barFill = document.getElementById('cashBarFill');
-    if (barFill) barFill.style.width = `${progress}%`;
-
-    const cashOutBtn = document.getElementById('cashOutBtn');
-    if (cashOutBtn) {
-        if (player.score >= player.cashOutGoal) {
-            cashOutBtn.disabled = false;
-            cashOutBtn.style.opacity = '1';
-            cashOutBtn.style.cursor = 'pointer';
-            cashOutBtn.style.background = '#eab308';
-            cashOutBtn.style.color = '#000';
-        } else {
-            cashOutBtn.disabled = true;
-            cashOutBtn.style.opacity = '0.5';
-            cashOutBtn.style.cursor = 'not-allowed';
-            cashOutBtn.style.background = '#64748b';
-            cashOutBtn.style.color = '#fff';
-        }
+        ctx.save();
+        const labelText = `$${score.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        ctx.font = 'bold 13px sans-serif';
+        const textWidth = ctx.measureText(labelText).width;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(x - textWidth / 2 - 12, y - radius - 34, textWidth + 24, 24, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#10b981';
+        ctx.textAlign = 'center';
+        ctx.fillText(labelText, x, y - radius - 18);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(name, x, y - radius - 42);
+        ctx.restore();
     }
 
+    function gameLoop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (adminFreeCam) {
+            const moveSpeed = 15;
+            if (mouse.x < 100) adminCamX -= moveSpeed;
+            if (mouse.x > canvas.width - 100) adminCamX += moveSpeed;
+            if (mouse.y < 100) adminCamY -= moveSpeed;
+            if (mouse.y > canvas.height - 100) adminCamY += moveSpeed;
+            adminCamX = Math.max(0, Math.min(WORLD_WIDTH, adminCamX));
+            adminCamY = Math.max(0, Math.min(WORLD_HEIGHT, adminCamY));
+            camera.update(adminCamX, adminCamY);
+        } else if (player.alive && isGameActive) {
+            const screenCenterX = canvas.width / 2;
+            const screenCenterY = canvas.height / 2;
+            const angle = Math.atan2(mouse.y - screenCenterY, mouse.x - screenCenterX);
+            player.x += Math.cos(angle) * player.speed;
+            player.y += Math.sin(angle) * player.speed;
+            player.x = Math.max(30, Math.min(WORLD_WIDTH - 30, player.x));
+            player.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, player.y));
+            player.trail.push({ x: player.x, y: player.y, angle });
+            if (player.trail.length > player.maxSegments) player.trail.shift();
+            camera.update(player.x, player.y);
+        } else if (player.isSpectator) {
+            const leaderBot = bots.length > 0 ? bots[0] : null;
+            if (leaderBot) camera.update(leaderBot.x, leaderBot.y);
+        }
+
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+        drawHexMap(ctx);
+
+        for (let i = foodPellets.length - 1; i >= 0; i--) {
+            const p = foodPellets[i];
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
+            if (player.alive && isGameActive && Math.hypot(player.x - p.x, player.y - p.y) < player.radius + p.radius) {
+                if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += 1;
+                foodPellets.splice(i, 1);
+                spawnPellet();
+            }
+        }
+
+        for (let i = goldCoins.length - 1; i >= 0; i--) {
+            const coin = goldCoins[i];
+            ctx.fillStyle = coin.color;
+            ctx.beginPath(); ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2); ctx.fill();
+            let coinEaten = false;
+            if (player.alive && isGameActive && Math.hypot(player.x - coin.x, player.y - coin.y) < player.radius + coin.radius) {
+                player.score += coin.value;
+                if (player.maxSegments < MAX_SEGMENTS_LIMIT) player.maxSegments += Math.min(2, MAX_SEGMENTS_LIMIT - player.maxSegments);
+                goldCoins.splice(i, 1);
+                continue;
+            }
+
+            for (const bot of bots) {
+                if (bot.alive && Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
+                    bot.score += coin.value;
+                    if (bot.maxSegments < MAX_SEGMENTS_LIMIT) bot.maxSegments += 1;
+                    goldCoins.splice(i, 1);
+                    coinEaten = true;
+                    break;
+                }
+            }
+            if (coinEaten) continue;
+        }
+
+        for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
+            const bot = bots[bIndex];
+            if (!bot.alive) continue;
+
+            let closestDist = 9999;
+            let targetX = null;
+            let targetY = null;
+
+            for (const coin of goldCoins) {
+                const d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
+                if (d < 600 && d < closestDist) {
+                    closestDist = d;
+                    targetX = coin.x;
+                    targetY = coin.y;
+                }
+            }
+
+            if (!targetX) {
+                for (const pellet of foodPellets) {
+                    const d = Math.hypot(bot.x - pellet.x, bot.y - pellet.y);
+                    if (d < 300 && d < closestDist) {
+                        closestDist = d;
+                        targetX = pellet.x;
+                        targetY = pellet.y;
+                    }
+                }
+            }
+
+            if (targetX !== null && targetY !== null) {
+                const desiredAngle = Math.atan2(targetY - bot.y, targetX - bot.x);
+                const angleDiff = Math.atan2(Math.sin(desiredAngle - bot.angle), Math.cos(desiredAngle - bot.angle));
+                bot.angle += angleDiff * 0.15;
+                bot.changeTimer = 0;
+            } else {
+                bot.changeTimer++;
+                if (bot.changeTimer > 30) {
+                    bot.angle += (Math.random() - 0.5) * 1.5;
+                    bot.changeTimer = 0;
+                }
+            }
+
+            bot.x += Math.cos(bot.angle) * bot.speed;
+            bot.y += Math.sin(bot.angle) * bot.speed;
+            if (bot.x < 100) { bot.x = 100; bot.angle = 0 + (Math.random() - 0.5) * 0.5; }
+            if (bot.x > WORLD_WIDTH - 100) { bot.x = WORLD_WIDTH - 100; bot.angle = Math.PI + (Math.random() - 0.5) * 0.5; }
+            if (bot.y < 100) { bot.y = 100; bot.angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5; }
+            if (bot.y > WORLD_HEIGHT - 100) { bot.y = WORLD_HEIGHT - 100; bot.angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5; }
+
+            bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
+            if (bot.trail.length > bot.maxSegments) bot.trail.shift();
+
+            if (player.alive && isGameActive && !player.invincible && !(isAdminUser && adminInvisible)) {
+                for (const segment of bot.trail) {
+                    if (Math.hypot(player.x - segment.x, player.y - segment.y) < player.radius + bot.radius * 0.6) {
+                        player.alive = false;
+                        isGameActive = false;
+                        bot.score += 1;
+                        bot.maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bot.maxSegments + 50);
+                        createGoldCoinsFromPlayerDeath(player.trail);
+                        showFloatingMessage(`💥 ¡Colisión con ${bot.name}!`, '#ef4444');
+                        const gallery = document.getElementById('skinGallery');
+                        if (gallery) gallery.style.display = 'block';
+                        break;
+                    }
+                }
+            }
+
+            if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
+                for (const segment of player.trail) {
+                    if (Math.hypot(bot.x - segment.x, bot.y - segment.y) < bot.radius + player.radius * 0.6) {
+                        createCoinsOrPelletsFromBotDeath(bot.trail, bot.score);
+                        showFloatingMessage(`¡${bot.name} eliminado por ti!`, '#10b981');
+                        const deadName = bot.name;
+                        const deadSkin = bot.skin;
+                        bots.splice(bIndex, 1);
+                        setTimeout(() => spawnBorderBot(deadName, deadSkin), 4000);
+                        break;
+                    }
+                }
+            }
+
+            if (bot.alive) {
+                drawOrganicBody(ctx, bot.trail, bot.radius, bot.skin);
+                drawAdvancedHead(ctx, bot.x, bot.y, bot.radius, bot.angle, bot.skin, bot.name, bot.score);
+            }
+        }
+
+        if (player.alive && isGameActive) {
+            const lastAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
+            if (!(isAdminUser && adminInvisible)) {
+                drawOrganicBody(ctx, player.trail, player.radius, player.skin);
+                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, player.name, player.score);
+            } else {
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                drawOrganicBody(ctx, player.trail, player.radius, player.skin);
+                drawAdvancedHead(ctx, player.x, player.y, player.radius, lastAngle, player.skin, `${player.name} (👻)`, player.score);
+                ctx.restore();
+            }
+        }
+
+        ctx.restore();
+
+        const progress = Math.min((player.score / player.cashOutGoal) * 100, 100);
+        const barFill = document.getElementById('cashBarFill');
+        if (barFill) barFill.style.width = `${progress}%`;
+
+        const cashOutBtn = document.getElementById('cashOutBtn');
+        if (cashOutBtn) {
+            if (player.score >= player.cashOutGoal) {
+                cashOutBtn.disabled = false;
+                cashOutBtn.style.opacity = '1';
+                cashOutBtn.style.cursor = 'pointer';
+                cashOutBtn.style.background = '#eab308';
+                cashOutBtn.style.color = '#000';
+            } else {
+                cashOutBtn.disabled = true;
+                cashOutBtn.style.opacity = '0.5';
+                cashOutBtn.style.cursor = 'not-allowed';
+                cashOutBtn.style.background = '#64748b';
+                cashOutBtn.style.color = '#fff';
+            }
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    syncBcvRate();
+    setTimeout(syncUserWallet, 1500);
+    initSupabase();
     requestAnimationFrame(gameLoop);
 }
-
-syncBcvRate();
-setTimeout(syncUserWallet, 1500);
-initSupabase();
-requestAnimationFrame(gameLoop);
