@@ -19,6 +19,8 @@ if (!canvas || !ctx) {
     const INITIAL_SEGMENTS = 30;
     const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20;
 
+    let frameCount = 0; // Contador global para Time-slicing
+
     // =========================================================================
     // MOTOR DE CUADRÍCULA ESPACIAL (CERO LAG)
     // =========================================================================
@@ -231,7 +233,6 @@ if (!canvas || !ctx) {
         adminPanelCollapsed = !collapsed;
     };
 
-    // Funciones exclusivas del Panel Admin Añadidas
     window.adminResetAllBotsScore = function() {
         if (!isAdminUser) return;
         bots.forEach(b => {
@@ -255,7 +256,7 @@ if (!canvas || !ctx) {
         if (bots[index]) {
             bots[index].score += addAmount;
             bots[index].maxSegments = Math.min(MAX_SEGMENTS_LIMIT, bots[index].maxSegments + Math.floor(addAmount * 20));
-            showFloatingMessage(`⬆️ ¡${bots.name} aumentado en +$${addAmount.toFixed(2)}!`, '#10b981');
+            showFloatingMessage(`⬆️ ¡${bots[index].name} aumentado en +$${addAmount.toFixed(2)}!`, '#10b981');
             updateAdminBotSelect();
         }
     };
@@ -765,7 +766,10 @@ if (!canvas || !ctx) {
         let bestObjective = null;
         let highestScore = -999;
 
-        if (player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
+        // Si su crecimiento está a tope (máximo tamaño), ignora la caza agresiva de jugadores y se dedica a monedas/vagar
+        const isMaxedOut = bot.maxSegments >= MAX_SEGMENTS_LIMIT;
+
+        if (!isMaxedOut && player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
             const distPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
             if (distPlayer < 900) {
                 const playerAngle = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
@@ -779,25 +783,28 @@ if (!canvas || !ctx) {
             }
         }
 
-        const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
-        for (const other of nearbyEntities) {
-            if (other === bot || !other.alive || other === player) continue;
-            const distToOther = Math.hypot(other.x - bot.x, other.y - bot.y);
-            if (distToOther < 700) {
-                const interceptX = other.x + Math.cos(other.angle || 0) * 100;
-                const interceptY = other.y + Math.sin(other.angle || 0) * 100;
-                const score = 400 - distToOther + (other.score * 20);
-                if (score > highestScore) {
-                    highestScore = score;
-                    bestObjective = { x: interceptX, y: interceptY, type: 'attack_bot' };
+        if (!isMaxedOut) {
+            const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
+            for (const other of nearbyEntities) {
+                if (other === bot || !other.alive || other === player) continue;
+                const distToOther = Math.hypot(other.x - bot.x, other.y - bot.y);
+                if (distToOther < 700) {
+                    const interceptX = other.x + Math.cos(other.angle || 0) * 100;
+                    const interceptY = other.y + Math.sin(other.angle || 0) * 100;
+                    const score = 400 - distToOther + (other.score * 20);
+                    if (score > highestScore) {
+                        highestScore = score;
+                        bestObjective = { x: interceptX, y: interceptY, type: 'attack_bot' };
+                    }
                 }
             }
         }
 
+        // Búsqueda de monedas sueltas (Prioridad alta si está a tope)
         for (const coin of goldCoins) {
             const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
             if (dist < 800) {
-                let score = 350 - dist + (coin.value * 70);
+                let score = (isMaxedOut ? 500 : 350) - dist + (coin.value * 70);
                 if (score > highestScore) {
                     highestScore = score;
                     bestObjective = { x: coin.x, y: coin.y, type: 'coin' };
@@ -849,7 +856,8 @@ if (!canvas || !ctx) {
             score: 0,
             alive: true,
             safetyMargin: 160 + Math.random() * 40,
-            riskTolerance: 3.2 + Math.random() * 0.8
+            riskTolerance: 3.2 + Math.random() * 0.8,
+            cachedObjective: null
         });
     }
 
@@ -982,6 +990,7 @@ if (!canvas || !ctx) {
     }
 
     function gameLoop() {
+        frameCount++;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         entityGrid.clear();
@@ -1121,11 +1130,19 @@ if (!canvas || !ctx) {
             if (coinEaten) continue;
         }
 
+        // =====================================================================
+        // BUCLE DE BOTS CON TIME-SLICING Y CACHÉ DE IA
+        // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
 
-            const objective = chooseBotObjective(bot);
+            // TIME-SLICING: Dividir la ejecución de la IA en grupos por fotogramas
+            // Solo se recalcula el objetivo del bot si coincide su turno (cada 15 frames escalonado)
+            if (!bot.cachedObjective || (frameCount % 15 === (bIndex % 15))) {
+                bot.cachedObjective = chooseBotObjective(bot);
+            }
+            const objective = bot.cachedObjective;
 
             let targetAngle = bot.angle;
             if (objective.type === 'evade' && objective.evadeAngle !== null) {
