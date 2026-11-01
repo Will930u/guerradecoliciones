@@ -1,15 +1,12 @@
-const BACKEND_URL = "https://guerradecoliciones.onrender.com";
+const BACKEND_URL = 'https://guerradecoliciones.onrender.com';
 
-// Variable global única y segura
 let supabaseClient = null;
 
-document.addEventListener("DOMContentLoaded", () => {
-    // Elementos de la interfaz
+document.addEventListener('DOMContentLoaded', () => {
     const loginForm = document.getElementById('loginForm');
     const registerForm = document.getElementById('registerForm');
     const formTitle = document.getElementById('formTitle');
     const authMessage = document.getElementById('authMessage');
-
     const showRegister = document.getElementById('showRegister');
     const showLogin = document.getElementById('showLogin');
     const linkResetPassword = document.getElementById('linkResetPassword');
@@ -21,83 +18,77 @@ document.addEventListener("DOMContentLoaded", () => {
         authMessage.style.display = 'block';
     }
 
-    // Alternar entre Vistas (Login <-> Registro)
     if (showRegister) {
-        showRegister.addEventListener('click', (e) => {
-            e.preventDefault();
+        showRegister.addEventListener('click', (event) => {
+            event.preventDefault();
             if (loginForm) loginForm.style.display = 'none';
             if (registerForm) registerForm.style.display = 'block';
-            if (formTitle) formTitle.innerText = "Crea tu cuenta de jugador";
+            if (formTitle) formTitle.innerText = 'Crea tu cuenta de jugador';
             if (authMessage) authMessage.style.display = 'none';
         });
     }
 
     if (showLogin) {
-        showLogin.addEventListener('click', (e) => {
-            e.preventDefault();
+        showLogin.addEventListener('click', (event) => {
+            event.preventDefault();
             if (registerForm) registerForm.style.display = 'none';
             if (loginForm) loginForm.style.display = 'block';
-            if (formTitle) formTitle.innerText = "Accede a tu cuenta para jugar";
+            if (formTitle) formTitle.innerText = 'Accede a tu cuenta para jugar';
             if (authMessage) authMessage.style.display = 'none';
         });
     }
 
-    // Inicializar cliente desde Render de forma asíncrona segura
     async function initSupabaseClient() {
         try {
-            let response = await fetch(`${BACKEND_URL}/api/config`);
-            let config = await response.json();
-
+            const response = await fetch(`${BACKEND_URL}/api/config`);
+            const config = await response.json();
             if (config.supabase_url && config.supabase_anon_key) {
                 if (window.supabase) {
                     supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
-                    console.log("Cliente Supabase inicializado con éxito.");
                 } else {
-                    showMessage("Error crítico: La librería de Supabase no cargó en el navegador.");
+                    showMessage('Error crítico: La librería de Supabase no cargó en el navegador.');
                 }
             } else {
-                showMessage("Falta configurar variables de entorno en Render.");
+                showMessage('Falta configurar variables de entorno en Render.');
             }
         } catch (error) {
-            console.error("Error al conectar con Render:", error);
-            showMessage("Error de conexión con el servidor de autenticación.");
+            console.error('Error conectando con Render:', error);
+            showMessage('Error de conexión con el servidor de autenticación.');
         }
     }
 
     initSupabaseClient();
 
-    // 1. INICIAR SESIÓN
     if (loginForm) {
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
+        loginForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
             if (!supabaseClient) {
-                showMessage("Conectando con el servidor, espera un momento...");
+                showMessage('Conectando con el servidor, espera un momento...');
                 return;
             }
 
             const email = document.getElementById('loginEmail').value.trim();
             const password = document.getElementById('loginPassword').value.trim();
-
-            showMessage("Iniciando sesión...", "success");
+            showMessage('Iniciando sesión...', 'success');
 
             const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
             if (error) {
                 showMessage(error.message);
             } else {
-                showMessage("¡Ingreso exitoso! Redirigiendo...", "success");
                 localStorage.setItem('supabase_user_id', data.user.id);
-                setTimeout(() => { window.location.href = "index.html"; }, 1000);
+                showMessage('¡Ingreso exitoso! Redirigiendo...', 'success');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 1000);
             }
         });
     }
 
-    // 2. REGISTRARSE CON METADATOS COMPLETOS
     if (registerForm) {
-        registerForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
+        registerForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
             if (!supabaseClient) {
-                showMessage("Conectando con el servidor, espera un momento...");
+                showMessage('Conectando con el servidor, espera un momento...');
                 return;
             }
 
@@ -110,21 +101,21 @@ document.addEventListener("DOMContentLoaded", () => {
             const confirmPassword = document.getElementById('regConfirmPassword').value.trim();
 
             if (password !== confirmPassword) {
-                showMessage("Las contraseñas no coinciden.");
+                showMessage('Las contraseñas no coinciden.');
                 return;
             }
 
-            showMessage("Registrando cuenta...", "success");
+            showMessage('Registrando cuenta...', 'success');
 
             const { data, error } = await supabaseClient.auth.signUp({
-                email: email,
-                password: password,
+                email,
+                password,
                 options: {
                     data: {
-                        username: username,
+                        username,
                         id_card: idCard,
                         bank_code: bankCode,
-                        phone_number: phone
+                        phone_number: phone,
                     }
                 }
             });
@@ -132,33 +123,30 @@ document.addEventListener("DOMContentLoaded", () => {
             if (error) {
                 showMessage(error.message);
             } else {
-                showMessage("¡Cuenta registrada con éxito! Ya puedes iniciar sesión.", "success");
-                setTimeout(() => { 
-                    if (showLogin) showLogin.click(); 
+                showMessage('¡Cuenta registrada con éxito! Ya puedes iniciar sesión.', 'success');
+                setTimeout(() => {
+                    if (showLogin) showLogin.click();
                 }, 1500);
             }
         });
     }
 
-    // 3. RECUPERAR CONTRASEÑA VÍA CORREO
     if (linkResetPassword) {
-        linkResetPassword.addEventListener('click', async (e) => {
-            e.preventDefault();
+        linkResetPassword.addEventListener('click', async (event) => {
+            event.preventDefault();
             if (!supabaseClient) {
-                showMessage("Conectando con el servidor...");
+                showMessage('Conectando con el servidor...');
                 return;
             }
 
             const emailInput = document.getElementById('loginEmail');
             const email = emailInput ? emailInput.value.trim() : '';
-
             if (!email) {
-                showMessage("Ingresa tu correo en el campo superior para enviarte el enlace.");
+                showMessage('Ingresa tu correo en el campo superior para enviarte el enlace.');
                 return;
             }
 
-            showMessage("Enviando correo de recuperación...", "success");
-
+            showMessage('Enviando correo de recuperación...', 'success');
             const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
                 redirectTo: window.location.origin + '/reset-password.html',
             });
@@ -166,7 +154,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (error) {
                 showMessage(error.message);
             } else {
-                showMessage("¡Enlace enviado! Revisa tu bandeja de entrada o Spam.", "success");
+                showMessage('¡Enlace enviado! Revisa tu bandeja de entrada o Spam.', 'success');
             }
         });
     }
