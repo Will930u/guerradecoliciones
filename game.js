@@ -22,7 +22,7 @@ if (!canvas || !ctx) {
     let frameCount = 0; // Contador global para Time-slicing
 
     // =========================================================================
-    // MOTOR DE CUADRÍCULA ESPACIAL (CERO LAG)
+    // MOTOR DE CUADRÍCULA ESPACIAL (CERO LAG CON CIENTOS DE ENTIDADES)
     // =========================================================================
     class SpatialGrid {
         constructor(cellSize) {
@@ -238,6 +238,7 @@ if (!canvas || !ctx) {
         bots.forEach(b => {
             b.score = 0;
             b.maxSegments = INITIAL_SEGMENTS;
+            b.trail = []; // Vacía el cuerpo al instante para encogerlos en caliente
         });
         showFloatingMessage('🔄 ¡Se ha restablecido el valor de todos los bots a $0.00!', '#d97706');
         updateAdminBotSelect();
@@ -247,7 +248,7 @@ if (!canvas || !ctx) {
         if (!isAdminUser) return;
         const select = document.getElementById('adminBotSelect');
         const valInput = document.getElementById('adminBotBoostValue');
-        if (!select || !select.value) {
+        if (!select || select.value === "") {
             showFloatingMessage('Selecciona un bot válido.', '#ef4444');
             return;
         }
@@ -766,7 +767,7 @@ if (!canvas || !ctx) {
         let bestObjective = null;
         let highestScore = -999;
 
-        // Si su crecimiento está a tope (máximo tamaño), ignora la caza agresiva de jugadores y se dedica a monedas/vagar
+        // Si su crecimiento está a tope, se dedica a buscar monedas/vagar relajadamente
         const isMaxedOut = bot.maxSegments >= MAX_SEGMENTS_LIMIT;
 
         if (!isMaxedOut && player.alive && !(isAdminUser && (adminInvisible || playerPowerState.invisibilityTimer > 0))) {
@@ -800,7 +801,6 @@ if (!canvas || !ctx) {
             }
         }
 
-        // Búsqueda de monedas sueltas (Prioridad alta si está a tope)
         for (const coin of goldCoins) {
             const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
             if (dist < 800) {
@@ -1137,8 +1137,7 @@ if (!canvas || !ctx) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
 
-            // TIME-SLICING: Dividir la ejecución de la IA en grupos por fotogramas
-            // Solo se recalcula el objetivo del bot si coincide su turno (cada 15 frames escalonado)
+            // Time-Slicing: recalcula la dirección solo en su turno escalonado
             if (!bot.cachedObjective || (frameCount % 15 === (bIndex % 15))) {
                 bot.cachedObjective = chooseBotObjective(bot);
             }
