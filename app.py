@@ -14,6 +14,10 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID")
+# ==========================================
+# [NUEVO] CAMBIO 1: Cargar el ID del Administrador desde las variables de entorno de Render
+# ==========================================
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
@@ -56,14 +60,18 @@ def send_telegram_payment_notification(payment_id, amount_usd, amount_ves, refer
 
 @app.route("/")
 def home():
-  return jsonify({"status": "Guerras de Colisiones Backend Activo 🚀", "ok": True}), 200
+  return jsonify({"status": "Viper Royale Backend Activo 🚀", "ok": True}), 200
 
 
 @app.route("/api/config", methods=["GET"])
 def get_config():
+  # ==========================================
+  # [NUEVO] CAMBIO 2: Incluir admin_user_id en la respuesta de configuración para el frontend
+  # ==========================================
   return jsonify({
       "supabase_url": SUPABASE_URL,
       "supabase_anon_key": SUPABASE_ANON_KEY,
+      "admin_user_id": ADMIN_USER_ID,
   }), 200
 
 
@@ -182,7 +190,6 @@ def request_cashout():
 def telegram_webhook():
   data = request.json or {}
   
-  # OPCIÓN 1: Respuesta por texto (Reply) del Administrador
   if "message" in data:
     msg = data["message"]
     chat_id = msg.get("chat", {}).get("id")
@@ -209,7 +216,6 @@ def telegram_webhook():
           if tx:
             current_status = tx.get("status")
             
-            # Aprobar Retiro por Reply
             if current_status == "cashout_pending":
               supabase.table("payment_transactions").update({
                   "status": "paid",
@@ -224,7 +230,6 @@ def telegram_webhook():
                   "reply_to_message_id": msg.get("message_id")
               }, timeout=5)
 
-            # Aprobar Recarga por Reply
             elif current_status == "pending":
               supabase.table("payment_transactions").update({
                   "status": "verified",
@@ -257,7 +262,6 @@ def telegram_webhook():
       except Exception as e:
         print(f"Error procesando reply en Telegram: {e}")
 
-  # OPCIÓN 2: Clic en botones interactivos de Telegram
   elif "callback_query" in data:
     callback = data["callback_query"]
     callback_data = callback.get("data")
@@ -274,7 +278,6 @@ def telegram_webhook():
         if tx:
           current_status = tx.get("status")
           
-          # 1. Aprobar Recarga por Botón
           if prefix == "approve" and current_status == "pending":
             supabase.table("payment_transactions").update({"status": "verified"}).eq("id", payment_id).execute()
             
@@ -304,7 +307,6 @@ def telegram_webhook():
                 "parse_mode": "HTML"
             }, timeout=5)
 
-          # 2. Rechazar Recarga por Botón
           elif prefix == "reject" and current_status == "pending":
             supabase.table("payment_transactions").update({"status": "rejected"}).eq("id", payment_id).execute()
             
@@ -320,7 +322,6 @@ def telegram_webhook():
                 "parse_mode": "HTML"
             }, timeout=5)
 
-          # 3. Aprobar Retiro (Cash Out) por Botón
           elif prefix == "cashoutpaid" and current_status == "cashout_pending":
             supabase.table("payment_transactions").update({"status": "paid"}).eq("id", payment_id).execute()
             
@@ -336,7 +337,6 @@ def telegram_webhook():
                 "parse_mode": "HTML"
             }, timeout=5)
 
-          # 4. Rechazar Retiro por Botón
           elif prefix == "cashoutreject" and current_status == "cashout_pending":
             supabase.table("payment_transactions").update({"status": "cashout_rejected"}).eq("id", payment_id).execute()
             
