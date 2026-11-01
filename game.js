@@ -9,7 +9,7 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // ==========================================
-// MAPA DINÁMICO / EXTENSIBLE (PUNTO 7)
+// MAPA DINÁMICO / EXTENSIBLE
 // ==========================================
 let WORLD_WIDTH = 6000;
 let WORLD_HEIGHT = 6000;
@@ -21,7 +21,7 @@ let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 // ==========================================
 const BACKEND_URL = "https://guerradecoliciones.onrender.com"; 
 let currentUserId = localStorage.getItem('supabase_user_id') || "00000000-0000-0000-0000-000000000000";
-let backendAdminId = ""; // Cargado dinámicamente desde app.py
+let backendAdminId = ""; 
 
 let isGameActive = false;
 const ENTRY_FEE = 2.00; 
@@ -108,6 +108,11 @@ function injectAdminPanel() {
             <button onclick="adminDropGift('chest')" style="width: 100%; padding: 7px; margin-bottom: 5px; background: #eab308; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🎁 Soltar Cofre</button>
             <button onclick="adminDropGift('star')" style="width: 100%; padding: 7px; margin-bottom: 8px; background: #10b981; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">⭐ Soltar Estrella</button>
             
+            <div style="display: flex; gap: 5px; margin-bottom: 8px;">
+                <button onclick="adminAddBot()" style="flex: 1; padding: 7px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">➕ Sumar Bot</button>
+                <button onclick="adminRemoveBot()" style="flex: 1; padding: 7px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">➖ Quitar Bot</button>
+            </div>
+
             <button id="adminFreeCamBtn" onclick="toggleAdminFreeCam()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🗺️ Navegación Libre: OFF</button>
             <button id="adminInvisBtn" onclick="toggleAdminInvisible()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #64748b; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">👻 Modo Fantasma: OFF</button>
             <button onclick="adminSpawnDirect()" style="width: 100%; padding: 7px; margin-bottom: 6px; background: #06b6d4; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">🎮 Spawn / Entrar Directo</button>
@@ -142,7 +147,7 @@ window.toggleAdminFreeCam = function() {
         btn.style.background = adminFreeCam ? "#0ea5e9" : "#64748b";
         btn.innerText = adminFreeCam ? "🗺️ Navegación Libre: ON" : "🗺️ Navegación Libre: OFF";
     }
-    showFloatingMessage(adminFreeCam ? "🗺️ Navegación libre activada. Muévete por el mapa." : "🗺️ Navegación libre desactivada.", adminFreeCam ? "#0ea5e9" : "#10b981");
+    showFloatingMessage(adminFreeCam ? "🗺️ Navegación libre activada." : "🗺️ Navegación libre desactivada.", adminFreeCam ? "#0ea5e9" : "#10b981");
 };
 
 window.adminSpawnDirect = function() {
@@ -172,6 +177,24 @@ window.toggleAdminInvisible = function() {
         btn.innerText = adminInvisible ? "👻 Modo Fantasma: ON" : "👻 Modo Fantasma: OFF";
     }
     showFloatingMessage(adminInvisible ? "👻 Modo Fantasma activo." : "👻 Modo Fantasma inactivo.", adminInvisible ? "#ef4444" : "#10b981");
+};
+
+window.adminAddBot = function() {
+    if (!isAdminUser) return;
+    let randomSkinKey = skinKeys[Math.floor(Math.random() * skinKeys.length)];
+    let botName = botNamesList[Math.floor(Math.random() * botNamesList.length)] + "_" + Math.floor(Math.random() * 99);
+    spawnBorderBot(botName, skinCatalog[randomSkinKey]);
+    showFloatingMessage(`➕ Bot añadido (${bots.length} totales).`, "#3b82f6");
+};
+
+window.adminRemoveBot = function() {
+    if (!isAdminUser) return;
+    if (bots.length > 0) {
+        bots.pop();
+        showFloatingMessage(`➖ Bot eliminado (${bots.length} restantes).`, "#ef4444");
+    } else {
+        showFloatingMessage("No hay bots para eliminar.", "#eab308");
+    }
 };
 
 window.adminDropGift = function(type) {
@@ -299,7 +322,7 @@ function startWaitingForApproval() {
 }
 
 // ==========================================
-// INICIO Y SPAWN SEGURO (PUNTO 8)
+// INICIO Y SPAWN SEGURO
 // ==========================================
 function startArenaGame() {
     isGameActive = true;
@@ -374,7 +397,7 @@ async function submitPayment() {
 }
 
 // ==========================================
-// RETIRO (CASH OUT) Y MODO ESPECTADOR (PUNTO 10)
+// RETIRO (CASH OUT) Y MODO ESPECTADOR (CORREGIDO)
 // ==========================================
 window.attemptCashOut = function() {
     if (player.score < player.cashOutGoal) {
@@ -382,7 +405,7 @@ window.attemptCashOut = function() {
         return;
     }
 
-    if (player.cashOutTimer) return;
+    if (player.cashOutInterval) return;
 
     player.alive = false;
     player.isSpectator = true;
@@ -419,6 +442,7 @@ window.attemptCashOut = function() {
                 } else {
                     showFloatingMessage(result.error || "Error al solicitar retiro.", "#ef4444");
                     closeModal();
+                    player.isSpectator = false;
                     let gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
                 }
@@ -426,6 +450,7 @@ window.attemptCashOut = function() {
                 console.error("Error al solicitar retiro:", err);
                 showFloatingMessage("Error de conexión.", "#ef4444");
                 closeModal();
+                player.isSpectator = false;
                 let gallery = document.getElementById('skinGallery');
                 if (gallery) gallery.style.display = 'block';
             }
@@ -453,9 +478,14 @@ function startWaitingForCashOutApproval(amountUSD) {
                     cashOutCheckInterval = null;
 
                     showFloatingMessage(`¡Retiro de $${amountUSD} USD pagado! Ref: ${tx.reference_number}`, "#10b981");
+                    
+                    // PURGA TOTAL DEL JUGADOR AL COMPLETARSE EL RETIRO EXITOSO
                     player.score = 0;
+                    player.alive = false;
                     player.isSpectator = false;
+                    isGameActive = false;
                     player.maxSegments = INITIAL_SEGMENTS;
+                    player.trail = [];
 
                     let gallery = document.getElementById('skinGallery');
                     if (gallery) gallery.style.display = 'block';
@@ -468,7 +498,7 @@ function startWaitingForCashOutApproval(amountUSD) {
 }
 
 // ==========================================
-// ABANDONO Y DESCONEXIÓN (PUNTO 9)
+// ABANDONO Y DESCONEXIÓN
 // ==========================================
 window.leaveGameVoluntarily = function() {
     if (isGameActive && player.alive) {
@@ -481,6 +511,7 @@ window.leaveGameVoluntarily = function() {
         player.alive = false;
         isGameActive = false;
         player.score = 0;
+        player.trail = [];
         let gallery = document.getElementById('skinGallery');
         if (gallery) gallery.style.display = 'block';
     }
@@ -862,7 +893,7 @@ function gameLoop() {
         if (coinEaten) continue;
     }
 
-    // BOTS Y IA TÁCTICA
+    // BOTS Y IA TÁCTICA (CORREGIDA PARA EVITAR BUCLES Y ESTANCAMIENTO)
     for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
         let bot = bots[bIndex];
         if (!bot.alive) continue;
@@ -871,50 +902,24 @@ function gameLoop() {
         let targetX = null;
         let targetY = null;
 
-        if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
-            let dPlayer = Math.hypot(bot.x - player.x, bot.y - player.y);
-            if (dPlayer < 550) {
-                closestDist = dPlayer;
-                let playerHeading = player.trail.length > 0 ? player.trail[player.trail.length - 1].angle : 0;
-                targetX = player.x + Math.cos(playerHeading) * 120;
-                targetY = player.y + Math.sin(playerHeading) * 120;
+        // Búsqueda prioritaria de monedas/cofres cercanos para mantener movimiento fluido y natural
+        for (let coin of goldCoins) {
+            let d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
+            if (d < 600 && d < closestDist) {
+                closestDist = d;
+                targetX = coin.x;
+                targetY = coin.y;
             }
         }
 
+        // Si no hay monedas cerca, buscar pellets de comida
         if (!targetX) {
-            for (let otherBot of bots) {
-                if (otherBot !== bot && otherBot.alive) {
-                    let dBot = Math.hypot(bot.x - otherBot.x, bot.y - otherBot.y);
-                    if (dBot < 350 && dBot < closestDist) {
-                        if (otherBot.maxSegments > bot.maxSegments * 1.3) {
-                            let escapeAngle = Math.atan2(bot.y - otherBot.y, bot.x - otherBot.x);
-                            bot.angle = escapeAngle;
-                        } else {
-                            closestDist = dBot;
-                            targetX = otherBot.x;
-                            targetY = otherBot.y;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!targetX) {
-            for (let coin of goldCoins) {
-                let d = Math.hypot(bot.x - coin.x, bot.y - coin.y);
-                if (d < 450 && d < closestDist) {
-                    let isSafeToGrab = true;
-                    if (player.alive && isGameActive && !(isAdminUser && adminInvisible)) {
-                        let distPlayerToCoin = Math.hypot(player.x - coin.x, player.y - coin.y);
-                        if (distPlayerToCoin < 300) {
-                            isSafeToGrab = false;
-                        }
-                    }
-                    if (isSafeToGrab) {
-                        closestDist = d;
-                        targetX = coin.x;
-                        targetY = coin.y;
-                    }
+            for (let pellet of foodPellets) {
+                let d = Math.hypot(bot.x - pellet.x, bot.y - pellet.y);
+                if (d < 300 && d < closestDist) {
+                    closestDist = d;
+                    targetX = pellet.x;
+                    targetY = pellet.y;
                 }
             }
         }
@@ -922,11 +927,12 @@ function gameLoop() {
         if (targetX !== null && targetY !== null) {
             let desiredAngle = Math.atan2(targetY - bot.y, targetX - bot.x);
             let angleDiff = Math.atan2(Math.sin(desiredAngle - bot.angle), Math.cos(desiredAngle - bot.angle));
-            bot.angle += angleDiff * 0.1;
+            bot.angle += angleDiff * 0.15;
+            bot.changeTimer = 0; // Reiniciar temporizador de deambulación si hay objetivo claro
         } else {
             bot.changeTimer++;
-            if (bot.changeTimer > 40) {
-                bot.angle += (Math.random() - 0.5) * 1.2;
+            if (bot.changeTimer > 30) {
+                bot.angle += (Math.random() - 0.5) * 1.5;
                 bot.changeTimer = 0;
             }
         }
@@ -934,8 +940,11 @@ function gameLoop() {
         bot.x += Math.cos(bot.angle) * bot.speed;
         bot.y += Math.sin(bot.angle) * bot.speed;
 
-        if (bot.x < 80 || bot.x > WORLD_WIDTH - 80) bot.angle = Math.PI - bot.angle;
-        if (bot.y < 80 || bot.y > WORLD_HEIGHT - 80) bot.angle = -bot.angle;
+        // Rebote suave en los bordes del mapa para evitar atascos
+        if (bot.x < 100) { bot.x = 100; bot.angle = 0 + (Math.random() - 0.5) * 0.5; }
+        if (bot.x > WORLD_WIDTH - 100) { bot.x = WORLD_WIDTH - 100; bot.angle = Math.PI + (Math.random() - 0.5) * 0.5; }
+        if (bot.y < 100) { bot.y = 100; bot.angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5; }
+        if (bot.y > WORLD_HEIGHT - 100) { bot.y = WORLD_HEIGHT - 100; bot.angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.5; }
 
         bot.trail.push({ x: bot.x, y: bot.y, angle: bot.angle });
         if (bot.trail.length > bot.maxSegments) bot.trail.shift();
