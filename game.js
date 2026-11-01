@@ -19,6 +19,43 @@ if (!canvas || !ctx) {
     const INITIAL_SEGMENTS = 30;
     const MAX_SEGMENTS_LIMIT = INITIAL_SEGMENTS * 20;
 
+    // =========================================================================
+    // MOTOR DE CUADRÍCULA ESPACIAL (OPTIMIZACIÓN CONTRA EL LAG)
+    // =========================================================================
+    class SpatialGrid {
+        constructor(cellSize) {
+            this.cellSize = cellSize;
+            this.map = new Map();
+        }
+        clear() {
+            this.map.clear();
+        }
+        insert(x, y, entity) {
+            const key = `${Math.floor(x / this.cellSize)}_${Math.floor(y / this.cellSize)}`;
+            if (!this.map.has(key)) {
+                this.map.set(key, []);
+            }
+            this.map.get(key).push(entity);
+        }
+        getNearby(x, y) {
+            const results = [];
+            const cx = Math.floor(x / this.cellSize);
+            const cy = Math.floor(y / this.cellSize);
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    const key = `${cx + dx}_${cy + dy}`;
+                    if (this.map.has(key)) {
+                        results.push(...this.map.get(key));
+                    }
+                }
+            }
+            return results;
+        }
+    }
+
+    const entityGrid = new SpatialGrid(500);
+    const pelletGrid = new SpatialGrid(400);
+
     const defaultUserId = '00000000-0000-0000-0000-000000000000';
     let currentUserId = localStorage.getItem('supabase_user_id') || defaultUserId;
     let backendAdminId = '';
@@ -604,11 +641,7 @@ if (!canvas || !ctx) {
         }
     });
 
-    // =========================================================================
-    // MOTOR DE IA ANTIBUCLE Y CAZA AGRESIVA
-    // =========================================================================
-
-    function getAdvancedBotRisk(bot, playerRef, botList) {
+    function getAdvancedBotRisk(bot, playerRef) {
         let riskScore = 0;
         let nearestDangerAngle = null;
 
@@ -638,7 +671,9 @@ if (!canvas || !ctx) {
             }
         }
 
-        for (const other of botList) {
+        // Consultar entidades cercanas usando la Cuadrícula Espacial
+        const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
+        for (const other of nearbyEntities) {
             if (other === bot || !other.alive) continue;
             const distBotHead = Math.hypot(other.x - bot.x, other.y - bot.y);
             if (distBotHead < bot.safetyMargin * 0.6) {
@@ -650,8 +685,8 @@ if (!canvas || !ctx) {
         return { riskScore, nearestDangerAngle };
     }
 
-    function chooseBotObjective(bot, allBots) {
-        const { riskScore } = getAdvancedBotRisk(bot, player, allBots);
+    function chooseBotObjective(bot) {
+        const { riskScore } = getAdvancedBotRisk(bot, player);
 
         if (riskScore > bot.riskTolerance) {
             return { type: 'evade', score: 999 };
@@ -660,8 +695,9 @@ if (!canvas || !ctx) {
         let bestObjective = null;
         let highestScore = -999;
 
-        // 1. CAZA Y COMBATE AGRESIVO ENTRE BOTS
-        for (const other of allBots) {
+        // 1. CAZA Y COMBATE AGRESIVO (Buscar bots cercanos usando la celda espacial)
+        const nearbyEntities = entityGrid.getNearby(bot.x, bot.y);
+        for (const other of nearbyEntities) {
             if (other === bot || !other.alive) continue;
             const distToOther = Math.hypot(other.x - bot.x, other.y - bot.y);
             if (distToOther < 700) {
@@ -675,7 +711,7 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 2. MONEDAS Y COFRES DE VALOR
+        // 2. MONEDAS Y COFRES
         if (!bestObjective || highestScore < 150) {
             for (const coin of goldCoins) {
                 const dist = Math.hypot(coin.x - bot.x, coin.y - bot.y);
@@ -689,9 +725,10 @@ if (!canvas || !ctx) {
             }
         }
 
-        // 3. PUNTOS DE CRECIMIENTO (PELLETS) - Búsqueda cercana eficiente
+        // 3. PUNTOS DE CRECIMIENTO CERCANOS (Usando celda de comida)
         if (!bestObjective || highestScore < 100) {
-            for (const pellet of foodPellets) {
+            const nearbyPellets = pelletGrid.getNearby(bot.x, bot.y);
+            for (const pellet of nearbyPellets) {
                 const dist = Math.hypot(pellet.x - bot.x, pellet.y - bot.y);
                 if (dist < 450) {
                     const score = 220 - dist;
@@ -705,7 +742,7 @@ if (!canvas || !ctx) {
 
         if (bestObjective) return bestObjective;
 
-        // Si no hay nada cerca, avanzar recto explorando el mapa
+        // Exploración en línea recta si no hay objetivos cercanos
         return {
             x: bot.x + Math.cos(bot.angle) * 500,
             y: bot.y + Math.sin(bot.angle) * 500,
@@ -871,6 +908,20 @@ if (!canvas || !ctx) {
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Actualizar Cuadrícula Espacial para este fotograma
+        entityGrid.clear();
+        pelletGrid.clear();
+
+        for (const bot of bots) {
+            if (bot.alive) entityGrid.insert(bot.x, bot.y, bot);
+        }
+        if (player.alive && isGameActive) {
+            entityGrid.insert(player.x, player.y, player);
+        }
+        for (const p of foodPellets) {
+            pelletGrid.insert(p.x, p.y, p);
+        }
+
         if (playerPowerState.speedBoostTimer > 0) playerPowerState.speedBoostTimer -= 1/60;
         if (playerPowerState.invisibilityTimer > 0) playerPowerState.invisibilityTimer -= 1/60;
         if (playerPowerState.hasDestructionPower && playerPowerState.powerTimer > 0) {
@@ -913,7 +964,7 @@ if (!canvas || !ctx) {
         ctx.translate(-camera.x, -camera.y);
         drawHexMap(ctx);
 
-        // CONSUMO EFICIENTE DE PELLETS
+        // CONSUMO DE PELLETS USANDO LA CUADRÍCULA ESPACIAL DE COMIDA
         for (let i = foodPellets.length - 1; i >= 0; i--) {
             const p = foodPellets[i];
             ctx.fillStyle = p.color;
@@ -941,8 +992,10 @@ if (!canvas || !ctx) {
                 continue;
             }
 
-            for (const bot of bots) {
-                if (bot.alive && Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
+            // Revisar bots cercanos al pellet
+            const nearbyBots = entityGrid.getNearby(p.x, p.y);
+            for (const bot of nearbyBots) {
+                if (bot !== player && bot.alive && Math.hypot(bot.x - p.x, bot.y - p.y) < bot.radius + p.radius) {
                     if (bot.maxSegments < MAX_SEGMENTS_LIMIT) bot.maxSegments += 1;
                     foodPellets.splice(i, 1);
                     spawnPellet();
@@ -995,8 +1048,9 @@ if (!canvas || !ctx) {
                 continue;
             }
 
-            for (const bot of bots) {
-                if (bot.alive && Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
+            const nearbyBotsForCoins = entityGrid.getNearby(coin.x, coin.y);
+            for (const bot of nearbyBotsForCoins) {
+                if (bot !== player && bot.alive && Math.hypot(bot.x - coin.x, bot.y - coin.y) < bot.radius + coin.radius) {
                     bot.score += coin.value;
                     if (bot.maxSegments < MAX_SEGMENTS_LIMIT) bot.maxSegments += 1;
                     goldCoins.splice(i, 1);
@@ -1008,14 +1062,14 @@ if (!canvas || !ctx) {
         }
 
         // =====================================================================
-        // BUCLE DE BOTS CON IA ANTIBUCLE Y RUPTURA DE ÓRBITA
+        // BUCLE DE BOTS CON IA ÓPTIMA Y COLISIONES RÁPIDAS
         // =====================================================================
         for (let bIndex = bots.length - 1; bIndex >= 0; bIndex--) {
             const bot = bots[bIndex];
             if (!bot.alive) continue;
 
-            const { riskScore, nearestDangerAngle } = getAdvancedBotRisk(bot, player, bots);
-            const objective = chooseBotObjective(bot, bots);
+            const { riskScore, nearestDangerAngle } = getAdvancedBotRisk(bot, player);
+            const objective = chooseBotObjective(bot);
 
             let targetAngle = bot.angle;
             if (objective.type === 'evade' && nearestDangerAngle !== null) {
@@ -1024,11 +1078,10 @@ if (!canvas || !ctx) {
                 targetAngle = Math.atan2(objective.y - bot.y, objective.x - bot.x);
             }
 
-            // Mecanismo estricto anti-bucle de giro en círculos
             const angleDiff = normalizeAngle(targetAngle - bot.angle);
             if (Math.abs(angleDiff) > 2.2) {
                 bot.orbitTimer = (bot.orbitTimer || 0) + 1;
-                if (bot.orbitTimer > 45) { // Si gira más de 45 frames sin decidirse, rompe el círculo
+                if (bot.orbitTimer > 40) {
                     targetAngle += (Math.random() > 0.5 ? Math.PI : -Math.PI);
                     bot.orbitTimer = 0;
                 }
@@ -1071,12 +1124,11 @@ if (!canvas || !ctx) {
             }
             if (!bot.alive) continue;
 
-            // 2. Cabeza de Bot vs Cuerpo de OTROS BOTS
+            // 2. Cabeza de Bot vs Cuerpo de OTROS BOTS (Usando entidades cercanas)
             let botDiedByOther = false;
-            for (let otherIdx = 0; otherIdx < bots.length; otherIdx++) {
-                if (otherIdx === bIndex) continue;
-                const otherBot = bots[otherIdx];
-                if (!otherBot.alive) continue;
+            const nearbyForCollision = entityGrid.getNearby(bot.x, bot.y);
+            for (const otherBot of nearbyForCollision) {
+                if (otherBot === bot || !otherBot.alive || otherBot === player) continue;
 
                 for (let i = 0; i < otherBot.trail.length - 10; i++) {
                     const seg = otherBot.trail[i];
